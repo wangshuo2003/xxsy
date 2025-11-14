@@ -68,7 +68,9 @@ if (rateLimitEnabled) {
   }))
 }
 
-app.use(helmet())
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' }
+}))
 
 // 解析请求体
 app.use(express.json({ limit: '10mb' }))

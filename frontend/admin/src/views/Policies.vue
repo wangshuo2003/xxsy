@@ -4,7 +4,8 @@
       <h1>政策通知管理</h1>
     </div>
 
-    <el-card class="content-card">
+    <div class="policy-card-wrapper">
+      <el-card class="content-card policy-card">
       <!-- 工具栏 -->
       <div class="toolbar">
         <div class="toolbar-left">
@@ -48,18 +49,22 @@
           style="width: 100%"
           row-key="id"
         >
-          <el-table-column prop="title" label="标题" min-width="200" />
+          <el-table-column prop="title" label="标题" min-width="220">
+            <template #default="{ row }">
+              <el-button
+                class="title-button"
+                :class="row.isDraft ? 'is-draft' : 'is-published'"
+                size="small"
+                @click="handleEdit(row)"
+              >
+                {{ row.title || '未命名' }}
+              </el-button>
+            </template>
+          </el-table-column>
           <el-table-column prop="tags" label="标签" width="150">
             <template #default="{ row }">
               <el-tag v-if="row.tags" size="small">{{ row.tags }}</el-tag>
               <span v-else class="text-gray">-</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="状态" width="100">
-            <template #default="{ row }">
-              <el-tag :type="row.isDraft ? 'info' : 'success'">
-                {{ row.isDraft ? '隐藏' : '已发布' }}
-              </el-tag>
             </template>
           </el-table-column>
           <el-table-column label="附件" width="120">
@@ -83,35 +88,6 @@
               {{ formatDate(row.createdAt) }}
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="300" fixed="right">
-            <template #default="{ row }">
-              <div class="action-buttons">
-                <el-button
-                  type="primary"
-                  size="small"
-                  @click="handleEdit(row)"
-                >
-                  编辑
-                </el-button>
-                <el-button
-                  :type="row.isDraft ? 'success' : 'warning'"
-                  size="small"
-                  @click="toggleDraftStatus(row)"
-                >
-                  {{ row.isDraft ? '发布' : '设为草稿' }}
-                </el-button>
-                <el-popconfirm
-                  title="确定删除这条政策通知吗？"
-                  @confirm="handleDelete(row.id)"
-                  width="220"
-                >
-                  <template #reference>
-                    <el-button type="danger" size="small">删除</el-button>
-                  </template>
-                </el-popconfirm>
-              </div>
-            </template>
-          </el-table-column>
         </el-table>
       </div>
 
@@ -127,15 +103,17 @@
           @current-change="handleCurrentChange"
         />
       </div>
-    </el-card>
+      </el-card>
+    </div>
 
     <!-- 编辑对话框 -->
     <el-dialog
+      class="policy-edit-dialog"
       v-model="editDialogVisible"
       :title="isEdit ? '编辑政策通知' : '发布政策通知'"
       width="900px"
       @close="resetForm"
-      :close-on-click-modal="false"
+      :close-on-click-modal="true"
     >
       <el-form
         ref="formRef"
@@ -172,7 +150,7 @@
           />
         </el-form-item>
 
-        <el-form-item label="视频上传">
+        <el-form-item label="视频上传" class="upload-video-item">
           <el-upload
             class="upload-demo"
             :action="uploadUrl"
@@ -213,16 +191,19 @@
           </el-upload>
         </el-form-item>
 
-        <el-form-item>
-          <el-checkbox v-model="formData.isDraft">
-            保存为草稿（隐藏状态不会在前台显示）
-          </el-checkbox>
-        </el-form-item>
       </el-form>
 
       <template #footer>
         <div class="dialog-footer">
           <el-button @click="editDialogVisible = false">取消</el-button>
+          <el-button
+            class="draft-toggle-btn"
+            :class="{ 'is-hidden': formData.isDraft }"
+            :loading="submitting"
+            @click="handleDraftAction"
+          >
+            {{ formData.isDraft ? '显示' : '隐藏' }}
+          </el-button>
           <el-button type="primary" @click="handleSubmit" :loading="submitting">
             {{ isEdit ? '更新' : '发布' }}
           </el-button>
@@ -378,30 +359,6 @@ const handleEdit = (row) => {
   editDialogVisible.value = true
 }
 
-// 切换草稿状态
-const toggleDraftStatus = async (row) => {
-  try {
-    await request.put(`/policies/${row.id}`, {
-      isDraft: !row.isDraft
-    })
-    ElMessage.success(`${row.isDraft ? '发布' : '设为草稿'}成功`)
-    loadData()
-  } catch (error) {
-    ElMessage.error('操作失败：' + (error.response?.data?.error || error.message))
-  }
-}
-
-// 删除政策通知
-const handleDelete = async (id) => {
-  try {
-    await request.delete(`/policies/${id}`)
-    ElMessage.success('删除成功')
-    loadData()
-  } catch (error) {
-    ElMessage.error('删除失败：' + (error.response?.data?.error || error.message))
-  }
-}
-
 // 文件上传相关
 const beforeVideoUpload = (file) => {
   const isVideo = file.type.startsWith('video/')
@@ -456,6 +413,23 @@ const previewFile = (url, type) => {
   previewDialogVisible.value = true
 }
 
+const submitPolicyRequest = async () => {
+  const submitData = {
+    title: formData.title,
+    content: formData.content,
+    tags: formData.tags,
+    isDraft: formData.isDraft,
+    videoUrl: formData.videoUrl,
+    fileUrl: formData.fileUrl
+  }
+
+  if (isEdit.value) {
+    await request.put(`/policies/${formData.id}`, submitData)
+  } else {
+    await request.post('/policies', submitData)
+  }
+}
+
 // 提交表单
 const handleSubmit = async () => {
   if (!formRef.value) return
@@ -465,27 +439,33 @@ const handleSubmit = async () => {
 
     submitting.value = true
 
-    const submitData = {
-      title: formData.title,
-      content: formData.content,
-      tags: formData.tags,
-      isDraft: formData.isDraft,
-      videoUrl: formData.videoUrl,
-      fileUrl: formData.fileUrl
-    }
-
-    if (isEdit.value) {
-      await request.put(`/policies/${formData.id}`, submitData)
-      ElMessage.success('更新成功')
-    } else {
-      await request.post('/policies', submitData)
-      ElMessage.success('发布成功')
-    }
-
+    await submitPolicyRequest()
+    ElMessage.success(isEdit.value ? '更新成功' : '发布成功')
     editDialogVisible.value = false
     loadData()
   } catch (error) {
     ElMessage.error('提交失败：' + (error.response?.data?.error || error.message))
+  } finally {
+    submitting.value = false
+  }
+}
+
+const handleDraftAction = async () => {
+  if (!formRef.value) return
+  const previousDraft = formData.isDraft
+  formData.isDraft = !previousDraft
+  const actionText = formData.isDraft ? '隐藏' : '显示'
+
+  try {
+    await formRef.value.validate()
+    submitting.value = true
+    await submitPolicyRequest()
+    ElMessage.success(`${actionText}成功`)
+    editDialogVisible.value = false
+    loadData()
+  } catch (error) {
+    formData.isDraft = previousDraft
+    ElMessage.error(`${actionText}失败：` + (error.response?.data?.error || error.message))
   } finally {
     submitting.value = false
   }
@@ -572,7 +552,7 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  margin: 0;
   padding: 0 20px;
   background: #f8f9fc;
   border-radius: 4px;
@@ -595,12 +575,6 @@ onMounted(() => {
   display: flex;
   justify-content: center;
   margin-top: 20px;
-}
-
-.action-buttons {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
 }
 
 .attachment-preview {
@@ -634,7 +608,130 @@ onMounted(() => {
 }
 
 :deep(.el-table .cell) {
-  line-height: 1.4;
+  line-height: 1.8;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.title-button {
+  width: 100%;
+  justify-content: flex-start;
+  white-space: normal;
+  line-height: 1.2;
+  border: none;
+  color: #fff;
+  min-height: 28px;
+  height: auto;
+  padding: 2px 8px;
+}
+
+.title-button.is-draft {
+  background-color: #909399;
+}
+
+.title-button.is-published {
+  background-color: #67c23a;
+}
+
+.draft-toggle-btn {
+  background-color: #909399 !important;
+  border-color: #909399 !important;
+  color: #fff !important;
+}
+
+.draft-toggle-btn.is-hidden {
+  background-color: #67c23a !important;
+  border-color: #67c23a !important;
+  color: #fff !important;
+}
+
+.policy-card-wrapper {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.policy-card-wrapper :deep(.el-card__body) {
+  line-height: 1.8;
+  padding: 0 !important;
+}
+
+.policy-card-wrapper :deep(.el-card__body > div) {
+  padding: 0 !important;
+}
+
+.policy-card-wrapper :deep(.el-card__body > div > div) {
+  padding: 0 !important;
+}
+
+.policy-card-wrapper :deep(#el-id-3319-2 > form > *) {
+  margin: 10px !important;
+}
+
+.policy-card-wrapper :deep(.upload-video-item) {
+  margin: 0 !important;
+}
+
+.policy-card-wrapper :deep(#el-id-3319-2 > form > div:nth-child(5)) {
+  margin: 0 !important;
+}
+
+.policy-card-wrapper :deep(#el-id-9794-2) {
+  padding: 0 !important;
+}
+
+.policy-card-wrapper :deep(#el-id-2554-2) {
+  padding: 0 !important;
+}
+
+.policy-card-wrapper :deep(#el-id-2827-2) {
+  padding: 0 !important;
+}
+
+.policy-card-wrapper :deep(#el-id-8720-2) {
+  padding: 0 !important;
+}
+
+.policy-card-wrapper > div > div > div {
+  padding: 0 !important;
+}
+
+.policy-card-wrapper :deep(.el-table__cell) {
+  padding-top: 6px;
+  padding-bottom: 6px;
+  line-height: 1.2;
+}
+
+.policy-card-wrapper :deep(.el-table__body tr) {
+  height: auto;
+}
+
+.policy-edit-dialog {
+  margin-top: 30px !important;
+}
+
+.policy-edit-dialog :deep(.el-dialog__body) {
+  padding: 0 !important;
+}
+
+.policy-edit-dialog :deep(.el-dialog__body > div) {
+  padding: 0 !important;
+}
+
+.policy-edit-dialog :deep(.el-dialog__body > div > div) {
+  padding: 0 !important;
+}
+
+.policy-edit-dialog :deep(.el-form-item.asterisk-left) {
+  margin: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+.policy-edit-dialog :deep(.el-dialog__footer) {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+  border-top: none !important;
 }
 
 </style>

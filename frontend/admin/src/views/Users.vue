@@ -291,16 +291,6 @@ const rules = {
   role: [
     { required: true, message: '请选择角色', trigger: 'change' }
   ],
-  newPassword: [
-    {
-      validator: (rule, value, callback) => {
-        if (!value) return callback()
-        if (value.length < 6) return callback(new Error('密码至少6位'))
-        return callback()
-      },
-      trigger: 'blur'
-    }
-  ],
   confirmPassword: [
     { validator: validateConfirmPassword, trigger: 'blur' }
   ]

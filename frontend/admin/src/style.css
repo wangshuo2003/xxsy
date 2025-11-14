@@ -170,3 +170,29 @@ body {
   align-items: center;
   gap: 10px;
 }
+
+#app > div > main > div > div:nth-child(3) > div > div {
+  margin-top: 30px !important;
+  margin-bottom: 0 !important;
+  padding: 0 !important;
+}
+
+#app > div > main > div > div.policy-card-wrapper > div > div > div.toolbar {
+  margin: 20px !important;
+}
+
+#app > div > main > div > div:nth-child(3) > div > div > header {
+  padding: 20px !important;
+  display: flex;
+  justify-content: center;
+}
+
+.el-dialog__body {
+  padding: 0 !important;
+  padding-left: 20px !important;
+  padding-right: 20px !important;
+}
+
+.el-form-item.asterisk-left {
+  margin: 10px 0 !important;
+}

@@ -22,6 +22,7 @@ services:
       NODE_ENV: development
       PORT: 28964
       RATE_LIMIT_ENABLED: "false"
+      FILE_PUBLIC_BASE_URL: "http://localhost:28964"
     volumes:
       - ./backend/uploads:/app/uploads
 

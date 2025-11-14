@@ -4,13 +4,43 @@ const prisma = require('../config/database')
 const { authMiddleware, roleMiddleware } = require('../middleware/auth')
 const multer = require('multer')
 const path = require('path')
+const fs = require('fs')
 
 const router = express.Router()
+
+const carouselUploadDir = path.join(__dirname, '../../uploads/carousels')
+const publicFileBaseUrl = process.env.FILE_PUBLIC_BASE_URL || process.env.PUBLIC_BASE_URL || ''
+
+if (!fs.existsSync(carouselUploadDir)) {
+  fs.mkdirSync(carouselUploadDir, { recursive: true })
+}
+
+const buildFileUrl = (req, filePath) => {
+  if (!filePath) return ''
+  if (/^https?:\/\//i.test(filePath)) {
+    return filePath
+  }
+
+  const baseUrl = publicFileBaseUrl || `${req.protocol}://${req.get('host')}`
+  const normalizedPath = filePath.startsWith('/') ? filePath : `/${filePath}`
+  return `${baseUrl}${normalizedPath}`
+}
+
+const formatCarouselResponse = (req, carousel) => {
+  if (!carousel) return carousel
+  return {
+    ...carousel,
+    imageUrl: buildFileUrl(req, carousel.imageUrl)
+  }
+}
 
 // 配置文件上传
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, 'uploads/carousels/')
+    if (!fs.existsSync(carouselUploadDir)) {
+      fs.mkdirSync(carouselUploadDir, { recursive: true })
+    }
+    cb(null, carouselUploadDir)
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
@@ -56,8 +86,10 @@ router.get('/', async (req, res) => {
 
     const total = await prisma.carousel.count({ where })
 
+    const formattedCarousels = carousels.map((carousel) => formatCarouselResponse(req, carousel))
+
     res.json({
-      data: carousels,
+      data: formattedCarousels,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -87,7 +119,7 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ error: '轮播图不存在' })
     }
 
-    res.json({ data: carousel })
+    res.json({ data: formatCarouselResponse(req, carousel) })
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: '服务器错误' })
@@ -97,7 +129,7 @@ router.get('/:id', async (req, res) => {
 // 创建轮播图
 router.post('/', authMiddleware, roleMiddleware(['SUPER_ADMIN']), upload.single('image'), [
   body('title').notEmpty().withMessage('标题不能为空'),
-  body('linkUrl').optional().isURL().withMessage('链接格式不正确')
+  body('linkUrl').optional({ checkFalsy: true }).isURL().withMessage('链接格式不正确')
 ], async (req, res) => {
   try {
     const errors = validationResult(req)
@@ -126,9 +158,11 @@ router.post('/', authMiddleware, roleMiddleware(['SUPER_ADMIN']), upload.single(
       }
     })
 
+    const formattedCarousel = formatCarouselResponse(req, carousel)
+
     res.status(201).json({
       message: '轮播图创建成功',
-      data: carousel
+      data: formattedCarousel
     })
   } catch (error) {
     console.error(error)
@@ -139,7 +173,7 @@ router.post('/', authMiddleware, roleMiddleware(['SUPER_ADMIN']), upload.single(
 // 更新轮播图
 router.put('/:id', authMiddleware, roleMiddleware(['SUPER_ADMIN']), upload.single('image'), [
   body('title').optional().notEmpty().withMessage('标题不能为空'),
-  body('linkUrl').optional().isURL().withMessage('链接格式不正确')
+  body('linkUrl').optional({ checkFalsy: true }).isURL().withMessage('链接格式不正确')
 ], async (req, res) => {
   try {
     const errors = validationResult(req)
@@ -176,9 +210,11 @@ router.put('/:id', authMiddleware, roleMiddleware(['SUPER_ADMIN']), upload.singl
       }
     })
 
+    const formattedCarousel = formatCarouselResponse(req, updatedCarousel)
+
     res.json({
       message: '轮播图更新成功',
-      data: updatedCarousel
+      data: formattedCarousel
     })
   } catch (error) {
     console.error(error)
