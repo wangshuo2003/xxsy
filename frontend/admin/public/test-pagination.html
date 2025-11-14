@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>已通过基地分页测试</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .test-result {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+            border-left: 4px solid #007bff;
+        }
+        .success { border-left-color: #28a745; }
+        .error { border-left-color: #dc3545; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .pagination-controls {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .pagination-info {
+            margin: 0 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>已通过基地分页测试</h1>
+
+        <div class="test-info">
+            <h3>测试目的</h3>
+            <p>验证后端API分页功能是否正常，以及前端是否能正确处理分页数据。</p>
+            <p><strong>当前测试页面</strong>: <code>http://localhost:5175/test-pagination.html</code></p>
+        </div>
+
+        <div>
+            <button onclick="testPage1()">测试第1页</button>
+            <button onclick="testPage2()">测试第2页</button>
+            <button onclick="testPage3()">测试第3页</button>
+            <button onclick="testAllPages()">测试所有页面</button>
+            <button onclick="testDifferentSizes()">测试不同页面大小</button>
+            <button onclick="clearResults()">清空结果</button>
+        </div>
+
+        <div class="pagination-controls">
+            <label>页面大小:</label>
+            <select id="pageSize" onchange="testCurrentPage()">
+                <option value="10">10</option>
+                <option value="20" selected>20</option>
+                <option value="50">50</option>
+            </select>
+            <label>当前页:</label>
+            <input type="number" id="currentPage" value="1" min="1" onchange="testCurrentPage()" style="width: 60px;">
+            <button onclick="testCurrentPage()">加载页面</button>
+            <div class="pagination-info" id="paginationInfo"></div>
+        </div>
+
+        <div id="results"></div>
+
+        <h3>数据表格</h3>
+        <div id="data-table">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>名称</th>
+                        <th>类型</th>
+                        <th>地址</th>
+                        <th>联系人</th>
+                        <th>状态</th>
+                        <th>创建时间</th>
+                    </tr>
+                </thead>
+                <tbody id="table-body">
+                    <tr>
+                        <td colspan="7" style="text-align: center; color: #666;">点击上方按钮开始测试</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3000/api';
+        let currentData = null;
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+            document.getElementById('table-body').innerHTML = '<tr><td colspan="7" style="text-align: center; color: #666;">点击上方按钮开始测试</td></tr>';
+            document.getElementById('paginationInfo').innerHTML = '';
+        }
+
+        function addResult(title, data, isSuccess = true) {
+            const resultsDiv = document.getElementById('results');
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `test-result ${isSuccess ? 'success' : 'error'}`;
+
+            const statusIcon = isSuccess ? '✅' : '❌';
+            const dataStr = typeof data === 'object' ? JSON.stringify(data, null, 2) : data;
+
+            resultDiv.innerHTML = `
+                <h4>${statusIcon} ${title}</h4>
+                <pre>${dataStr}</pre>
+            `;
+
+            resultsDiv.appendChild(resultDiv);
+        }
+
+        function updatePaginationInfo(pagination) {
+            document.getElementById('paginationInfo').innerHTML =
+                `总计: ${pagination.total} | 第${pagination.page}页，共${pagination.pages}页 | 每页${pagination.limit}条`;
+        }
+
+        function updateTable(data) {
+            const tbody = document.getElementById('table-body');
+            tbody.innerHTML = '';
+
+            if (!data || data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center;">没有数据</td></tr>';
+                return;
+            }
+
+            data.forEach(base => {
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td>${base.id}</td>
+                    <td>${base.name}</td>
+                    <td>${base.type}</td>
+                    <td>${base.address}</td>
+                    <td>${base.contact}</td>
+                    <td>${base.isActive ? '启用' : '禁用'}</td>
+                    <td>${new Date(base.createdAt).toLocaleString('zh-CN')}</td>
+                `;
+            });
+        }
+
+        async function fetchBases(page = 1, limit = 20, search = '') {
+            const params = new URLSearchParams({
+                page: page,
+                limit: limit,
+                isApproved: 'true'
+            });
+
+            if (search) {
+                params.append('search', search);
+            }
+
+            const url = `${API_BASE}/bases?${params}`;
+
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (response.ok) {
+                    return {
+                        success: true,
+                        data: data.data || [],
+                        pagination: data.pagination || {},
+                        page: page,
+                        limit: limit
+                    };
+                } else {
+                    return {
+                        success: false,
+                        error: data.error || '请求失败',
+                        status: response.status
+                    };
+                }
+            } catch (error) {
+                return {
+                    success: false,
+                    error: error.message
+                };
+            }
+        }
+
+        async function testPage1() {
+            addResult('测试第1页', '正在获取第1页数据...', true);
+            const result = await fetchBases(1, 20);
+
+            if (result.success) {
+                currentData = result;
+                addResult('第1页数据', {
+                    数据条数: result.data.length,
+                    总数据: result.pagination.total,
+                    总页数: result.pagination.pages,
+                    当前页: result.pagination.page
+                }, true);
+                updateTable(result.data);
+                updatePaginationInfo(result.pagination);
+
+                // 显示前3条数据的样例
+                if (result.data.length > 0) {
+                    addResult('第1页前3条数据', result.data.slice(0, 3).map(b => ({
+                        id: b.id,
+                        name: b.name
+                    })));
+                }
+            } else {
+                addResult('第1页测试失败', result.error, false);
+            }
+        }
+
+        async function testPage2() {
+            addResult('测试第2页', '正在获取第2页数据...', true);
+            const result = await fetchBases(2, 20);
+
+            if (result.success) {
+                addResult('第2页数据', {
+                    数据条数: result.data.length,
+                    总数据: result.pagination.total,
+                    总页数: result.pagination.pages,
+                    当前页: result.pagination.page
+                }, true);
+                updateTable(result.data);
+                updatePaginationInfo(result.pagination);
+
+                // 显示前3条数据的样例
+                if (result.data.length > 0) {
+                    addResult('第2页前3条数据', result.data.slice(0, 3).map(b => ({
+                        id: b.id,
+                        name: b.name
+                    })));
+                }
+
+                // 检查与第1页的数据是否重复
+                if (currentData && currentData.data && result.data) {
+                    const page1Ids = currentData.data.map(b => b.id);
+                    const page2Ids = result.data.map(b => b.id);
+                    const overlap = page1Ids.filter(id => page2Ids.includes(id));
+
+                    if (overlap.length > 0) {
+                        addResult('数据重复检查', `发现${overlap.length}条重复数据: ${overlap}`, false);
+                    } else {
+                        addResult('数据重复检查', '第1页和第2页没有重复数据', true);
+                    }
+                }
+
+                currentData = result;
+            } else {
+                addResult('第2页测试失败', result.error, false);
+            }
+        }
+
+        async function testPage3() {
+            addResult('测试第3页', '正在获取第3页数据...', true);
+            const result = await fetchBases(3, 20);
+
+            if (result.success) {
+                addResult('第3页数据', {
+                    数据条数: result.data.length,
+                    总数据: result.pagination.total,
+                    总页数: result.pagination.pages,
+                    当前页: result.pagination.page
+                }, true);
+                updateTable(result.data);
+                updatePaginationInfo(result.pagination);
+            } else {
+                addResult('第3页测试失败', result.error, false);
+            }
+        }
+
+        async function testAllPages() {
+            addResult('测试所有页面', '开始逐页测试...', true);
+
+            // 先获取第一页来了解总页数
+            const firstPage = await fetchBases(1, 20);
+
+            if (!firstPage.success) {
+                addResult('获取第一页失败', firstPage.error, false);
+                return;
+            }
+
+            const totalPages = firstPage.pagination.pages;
+            addResult('分页信息', `总页数: ${totalPages}`, true);
+
+            // 逐页测试（最多测试前10页）
+            const allData = [];
+            const pageResults = [];
+
+            for (let page = 1; page <= Math.min(totalPages, 10); page++) {
+                const result = await fetchBases(page, 20);
+
+                if (result.success) {
+                    allData.push(...result.data);
+                    pageResults.push({
+                        page: page,
+                        count: result.data.length,
+                        firstId: result.data[0]?.id,
+                        lastId: result.data[result.data.length - 1]?.id
+                    });
+                    addResult(`第${page}页`, {
+                        数据条数: result.data.length,
+                        第一条ID: result.data[0]?.id,
+                        最后一条ID: result.data[result.data.length - 1]?.id
+                    }, true);
+                } else {
+                    addResult(`第${page}页失败`, result.error, false);
+                }
+            }
+
+            // 检查重复
+            const allIds = allData.map(b => b.id);
+            const uniqueIds = [...new Set(allIds)];
+
+            if (allIds.length !== uniqueIds.length) {
+                addResult('重复数据检查', `发现${allIds.length - uniqueIds.length}条重复数据`, false);
+            } else {
+                addResult('重复数据检查', `所有${allIds.length}条数据都是唯一的`, true);
+            }
+        }
+
+        async function testDifferentSizes() {
+            const sizes = [5, 10, 20, 50];
+
+            for (const size of sizes) {
+                addResult(`测试页面大小: ${size}`, '正在获取数据...', true);
+                const result = await fetchBases(1, size);
+
+                if (result.success) {
+                    const expectedSize = Math.min(size, result.pagination.total);
+                    const actualSize = result.data.length;
+                    const isCorrect = actualSize === expectedSize;
+
+                    addResult(`页面大小${size}测试`, {
+                        期望数据: expectedSize,
+                        实际数据: actualSize,
+                        结果: isCorrect ? '正确' : '错误'
+                    }, isCorrect);
+                } else {
+                    addResult(`页面大小${size}测试失败`, result.error, false);
+                }
+            }
+        }
+
+        async function testCurrentPage() {
+            const page = parseInt(document.getElementById('currentPage').value) || 1;
+            const limit = parseInt(document.getElementById('pageSize').value) || 20;
+
+            addResult(`测试第${page}页 (每页${limit}条)`, '正在获取数据...', true);
+            const result = await fetchBases(page, limit);
+
+            if (result.success) {
+                addResult(`第${page}页数据`, {
+                    数据条数: result.data.length,
+                    总数据: result.pagination.total,
+                    总页数: result.pagination.pages,
+                    当前页: result.pagination.page
+                }, true);
+                updateTable(result.data);
+                updatePaginationInfo(result.pagination);
+            } else {
+                addResult(`第${page}页测试失败`, result.error, false);
+            }
+        }
+
+        // 页面加载完成后检查后端连接
+        window.addEventListener('load', async () => {
+            try {
+                const response = await fetch(`${API_BASE}/auth/health`);
+                if (response.ok) {
+                    addResult('后端连接检查', '✅ 后端连接正常，可以开始测试', true);
+                } else {
+                    addResult('后端连接检查', '❌ 后端连接异常', false);
+                }
+            } catch (error) {
+                addResult('后端连接检查', `❌ 无法连接到后端: ${error.message}`, false);
+            }
+        });
+    </script>
+</body>
+</html>

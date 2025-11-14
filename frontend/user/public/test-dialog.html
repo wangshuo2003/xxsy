@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>测试 Dialog Before-Close</title>
+  <link rel="stylesheet" href="https://unpkg.com/vant@4/lib/index.css">
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <script src="https://unpkg.com/vant@4/lib/vant.min.js"></script>
+</head>
+<body>
+  <div id="app">
+    <van-button type="primary" @click="showDialog = true">打开对话框</van-button>
+    
+    <van-dialog
+      v-model:show="showDialog"
+      title="编辑资料"
+      show-cancel-button
+      :before-close="handleBeforeClose"
+      :confirm-button-loading="loading"
+    >
+      <div style="padding: 20px;">
+        <van-field v-model="name" label="姓名" placeholder="请输入姓名" />
+        <van-field v-model="phone" label="手机号" placeholder="请输入手机号" />
+      </div>
+    </van-dialog>
+    
+    <div style="margin-top: 20px; padding: 20px; background: #f5f5f5;">
+      <h3>调试信息：</h3>
+      <div id="log"></div>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref } = Vue;
+    const { showToast } = vant;
+
+    createApp({
+      setup() {
+        const showDialog = ref(false);
+        const loading = ref(false);
+        const name = ref('测试用户');
+        const phone = ref('13800138000');
+
+        function log(message) {
+          const logDiv = document.getElementById('log');
+          const time = new Date().toLocaleTimeString();
+          logDiv.innerHTML += `<div>[${time}] ${message}</div>`;
+          console.log(message);
+        }
+
+        const handleBeforeClose = async (action) => {
+          log(`handleBeforeClose called, action: ${action}`);
+          
+          if (action === 'cancel') {
+            log('取消点击，关闭对话框');
+            return true;
+          }
+          
+          if (loading.value) {
+            log('正在加载中，阻止关闭');
+            return false;
+          }
+          
+          log('确认点击，开始验证');
+          
+          if (!name.value) {
+            log('验证失败：姓名为空');
+            showToast('请输入姓名');
+            return false;
+          }
+          
+          if (!phone.value) {
+            log('验证失败：手机号为空');
+            showToast('请输入手机号');
+            return false;
+          }
+          
+          log('验证通过，开始提交');
+          
+          try {
+            loading.value = true;
+            log('设置 loading = true');
+            
+            // 模拟异步请求
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            log('请求成功');
+            showToast.success('修改成功');
+            
+            loading.value = false;
+            log('设置 loading = false');
+            log('返回 true，允许关闭');
+            return true;
+          } catch (error) {
+            log('请求失败: ' + error.message);
+            showToast.fail('修改失败');
+            loading.value = false;
+            log('设置 loading = false');
+            log('返回 false，阻止关闭');
+            return false;
+          }
+        };
+
+        return {
+          showDialog,
+          loading,
+          name,
+          phone,
+          handleBeforeClose
+        };
+      }
+    }).use(vant).mount('#app');
+  </script>
+</body>
+</html>

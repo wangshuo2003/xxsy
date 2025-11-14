@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>前端分页调试</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .debug-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: #f8f9fa;
+        }
+        .debug-result {
+            background: white;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            border-left: 4px solid #007bff;
+            font-family: monospace;
+        }
+        .success { border-left-color: #28a745; }
+        .error { border-left-color: #dc3545; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .test-info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>前端分页调试工具</h1>
+
+        <div class="test-info">
+            <h3>调试说明</h3>
+            <p>这个工具用于测试前端分页功能，直接模拟 ApprovedBases 组件的分页行为。</p>
+            <p>如果这个工具工作正常，说明问题可能在于 Vue 组件的状态管理。</p>
+        </div>
+
+        <div class="debug-section">
+            <h3>1. 测试基础分页功能</h3>
+            <button onclick="testBasicPagination()">测试基础分页</button>
+            <div id="basic-pagination-result"></div>
+        </div>
+
+        <div class="debug-section">
+            <h3>2. 测试状态管理</h3>
+            <button onclick="testStateManagement()">测试状态管理</button>
+            <div id="state-management-result"></div>
+        </div>
+
+        <div class="debug-section">
+            <h3>3. 模拟Vue组件行为</h3>
+            <button onclick="simulateVueComponent()">模拟Vue组件</button>
+            <div id="vue-component-result"></div>
+        </div>
+
+        <div class="debug-section">
+            <h3>4. 检查浏览器兼容性</h3>
+            <button onclick="checkBrowserCompatibility()">检查浏览器兼容性</button>
+            <div id="compatibility-result"></div>
+        </div>
+
+        <div class="debug-section">
+            <h3>5. 实时分页测试</h3>
+            <div>
+                <label>当前页:</label>
+                <input type="number" id="currentPageInput" value="1" min="1" style="width: 60px;">
+                <label>页面大小:</label>
+                <select id="pageSizeInput">
+                    <option value="10">10</option>
+                    <option value="20">20</option>
+                    <option value="50">50</option>
+                </select>
+                <button onclick="testRealtimePagination()">测试当前分页</button>
+            </div>
+            <div id="realtime-result"></div>
+        </div>
+
+        <div class="debug-section">
+            <h3>6. 数据显示</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>名称</th>
+                        <th>类型</th>
+                        <th>地址</th>
+                        <th>状态</th>
+                    </tr>
+                </thead>
+                <tbody id="data-table-body">
+                    <tr>
+                        <td colspan="5" style="text-align: center;">点击上方按钮开始测试</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3000/api';
+
+        // 模拟Vue响应式状态
+        let vueState = {
+            currentPage: 1,
+            pageSize: 10,
+            total: 0,
+            loading: false,
+            bases: []
+        };
+
+        // 模拟Vue组件的loadData函数
+        async function simulateLoadData() {
+            console.log('模拟Vue loadData调用');
+            console.log('当前状态:', {
+                currentPage: vueState.currentPage,
+                pageSize: vueState.pageSize
+            });
+
+            const params = {
+                page: vueState.currentPage,
+                limit: vueState.pageSize,
+                isApproved: true
+            };
+
+            try {
+                const response = await fetch(`${API_BASE}/bases?${new URLSearchParams(params)}`);
+                const data = await response.json();
+
+                if (response.ok) {
+                    vueState.bases = data.data || [];
+                    vueState.total = data.pagination?.total || 0;
+                    console.log('API响应成功:', {
+                        数据条数: vueState.bases.length,
+                        总计: vueState.total,
+                        当前页: vueState.currentPage,
+                        每页大小: vueState.pageSize
+                    });
+                    return data;
+                } else {
+                    console.error('API响应失败:', data);
+                    return null;
+                }
+            } catch (error) {
+                console.error('请求失败:', error);
+                return null;
+            }
+        }
+
+        // 模拟Vue组件的事件处理
+        function simulatePageChange(newPage) {
+            console.log('模拟页面变化:', newPage);
+            vueState.currentPage = newPage;
+            return simulateLoadData();
+        }
+
+        function simulateSizeChange(newSize) {
+            console.log('模拟页面大小变化:', newSize);
+            vueState.pageSize = newSize;
+            vueState.currentPage = 1;
+            return simulateLoadData();
+        }
+
+        // 更新表格显示
+        function updateTable(data) {
+            const tbody = document.getElementById('data-table-body');
+            tbody.innerHTML = '';
+
+            if (!data || data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;">没有数据</td></tr>';
+                return;
+            }
+
+            data.forEach(base => {
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td>${base.id}</td>
+                    <td>${base.name}</td>
+                    <td>${base.type}</td>
+                    <td>${base.address}</td>
+                    <td>${base.isActive ? '启用' : '禁用'}</td>
+                `;
+            });
+        }
+
+        function addDebugResult(containerId, title, data, isSuccess = true) {
+            const container = document.getElementById(containerId);
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `debug-result ${isSuccess ? 'success' : 'error'}`;
+
+            const statusIcon = isSuccess ? '✅' : '❌';
+            const dataStr = typeof data === 'object' ? JSON.stringify(data, null, 2) : data;
+
+            resultDiv.innerHTML = `
+                <strong>${statusIcon} ${title}</strong>
+                <pre>${dataStr}</pre>
+            `;
+
+            container.appendChild(resultDiv);
+        }
+
+        async function testBasicPagination() {
+            const resultDiv = document.getElementById('basic-pagination-result');
+            resultDiv.innerHTML = '';
+
+            addDebugResult('basic-pagination-result', '测试第1页', '正在获取第1页数据...', true);
+
+            // 测试第1页
+            const page1 = await simulateLoadData();
+            if (page1) {
+                addDebugResult('basic-pagination-result', '第1页数据', {
+                    数据条数: vueState.bases.length,
+                    总计: vueState.total,
+                    当前页: vueState.currentPage
+                }, true);
+                updateTable(vueState.bases);
+            }
+
+            // 测试第2页
+            addDebugResult('basic-pagination-result', '测试第2页', '正在获取第2页数据...', true);
+            const page2 = await simulatePageChange(2);
+            if (page2) {
+                addDebugResult('basic-pagination-result', '第2页数据', {
+                    数据条数: vueState.bases.length,
+                    总计: vueState.total,
+                    当前页: vueState.currentPage
+                }, true);
+                updateTable(vueState.bases);
+            }
+        }
+
+        async function testStateManagement() {
+            const resultDiv = document.getElementById('state-management-result');
+            resultDiv.innerHTML = '';
+
+            // 重置状态
+            vueState = {
+                currentPage: 1,
+                pageSize: 10,
+                total: 0,
+                loading: false,
+                bases: []
+            };
+
+            addDebugResult('state-management-result', '初始状态', JSON.stringify(vueState, null, 2), true);
+
+            // 模拟连续的状态变化
+            await simulateSizeChange(5);
+            addDebugResult('state-management-result', '改变页面大小为5', JSON.stringify(vueState, null, 2), true);
+
+            await simulatePageChange(3);
+            addDebugResult('state-management-result', '跳转到第3页', JSON.stringify(vueState, null, 2), true);
+
+            await simulateSizeChange(20);
+            addDebugResult('state-management-result', '改变页面大小为20', JSON.stringify(vueState, null, 2), true);
+        }
+
+        async function simulateVueComponent() {
+            const resultDiv = document.getElementById('vue-component-result');
+            resultDiv.innerHTML = '';
+
+            addDebugResult('vue-component-result', 'Vue组件模拟', '正在模拟Vue组件的完整生命周期...', true);
+
+            // 初始化
+            vueState.currentPage = 1;
+            vueState.pageSize = 10;
+            await simulateLoadData();
+            addDebugResult('vue-component-result', '组件挂载完成', {
+                页面: vueState.currentPage,
+                大小: vueState.pageSize,
+                数据条数: vueState.bases.length
+            }, true);
+
+            // 模拟用户交互
+            await simulatePageChange(2);
+            addDebugResult('vue-component-result', '用户点击第2页', {
+                页面: vueState.currentPage,
+                数据条数: vueState.bases.length
+            }, true);
+
+            await simulatePageChange(3);
+            addDebugResult('vue-component-result', '用户点击第3页', {
+                页面: vueState.currentPage,
+                数据条数: vueState.bases.length
+            }, true);
+
+            updateTable(vueState.bases);
+        }
+
+        function checkBrowserCompatibility() {
+            const resultDiv = document.getElementById('compatibility-result');
+            resultDiv.innerHTML = '';
+
+            const tests = [
+                { name: 'Fetch API', test: typeof fetch !== 'undefined' },
+                { name: 'URLSearchParams', test: typeof URLSearchParams !== 'undefined' },
+                { name: 'Promise', test: typeof Promise !== 'undefined' },
+                { name: 'Arrow Functions', test: (() => true) },
+                { name: 'Template Literals', test: (() => { const test = `test`; return true; })() }
+            ];
+
+            tests.forEach(test => {
+                addDebugResult('compatibility-result', test.name, test.test ? '支持' : '不支持', test.test);
+            });
+        }
+
+        async function testRealtimePagination() {
+            const page = parseInt(document.getElementById('currentPageInput').value) || 1;
+            const size = parseInt(document.getElementById('pageSizeInput').value) || 10;
+
+            vueState.currentPage = page;
+            vueState.pageSize = size;
+
+            const resultDiv = document.getElementById('realtime-result');
+            resultDiv.innerHTML = `<p>正在测试第${page}页，每页${size}条数据...</p>`;
+
+            const result = await simulateLoadData();
+
+            if (result) {
+                addDebugResult('realtime-result', '实时测试结果', {
+                    页面: vueState.currentPage,
+                    大小: vueState.pageSize,
+                    数据条数: vueState.bases.length,
+                    总计: vueState.total,
+                    总页数: Math.ceil(vueState.total / vueState.pageSize)
+                }, true);
+                updateTable(vueState.bases);
+            } else {
+                addDebugResult('realtime-result', '测试失败', '无法获取数据', false);
+            }
+        }
+
+        // 页面加载时检查后端连接
+        window.addEventListener('load', async () => {
+            try {
+                const response = await fetch(`${API_BASE}/auth/health`);
+                if (response.ok) {
+                    console.log('✅ 后端连接正常');
+                } else {
+                    console.log('❌ 后端连接异常');
+                }
+            } catch (error) {
+                console.log('❌ 无法连接到后端:', error.message);
+            }
+        });
+    </script>
+</body>
+</html>

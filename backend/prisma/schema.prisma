@@ -1,0 +1,407 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "darwin-arm64", "linux-musl"]
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          Int      @id @default(autoincrement())
+  username    String   @unique
+  password    String
+  name        String
+  school      String?
+  grade       String?
+  className   String?
+  phone       String   @unique @db.VarChar(20)  // 支持国际手机号（包括+号和国家代码）
+  role        Role     @default(STUDENT)
+  avatar      String?
+  balance     Float    @default(0)              // 用户余额
+  isDisabled  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // 学生用户相关
+  certificates Certificate[]
+  activities   UserActivity[]
+  orders       Order[]
+  favorites    Favorite[]
+  balanceTransactions BalanceTransaction[]  // 余额交易记录
+  usedGiftCards GiftCard[]                  // 使用的礼品卡
+  usedBaseCoupons BaseCoupon[] @relation("BaseCouponUsedBy")
+  histories  UserHistory[]
+  changedHistories UserHistory[] @relation("UserHistoryChangedBy")
+
+  // 管理员相关
+  managedBases Base[] @relation("ManagedBases")
+
+  // 超级管理员创建的内容
+  createdBases     Base[]      @relation("CreatedBases")
+  createdServices  Service[]
+  createdPolicies  Policy[]
+  createdAchievements Achievement[]
+  createdCarousels Carousel[]
+  createdActivities Activity[]  @relation("CreatedActivities")
+  createdNotifications Notification[]
+
+  @@map("users")
+}
+
+model UserHistory {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  changedBy  Int?
+  username   String
+  name       String
+  phone      String
+  school     String?
+  grade      String?
+  className  String?
+  role       String
+  isDisabled Boolean
+  createdAt  DateTime @default(now())
+
+  user       User @relation(fields: [userId], references: [id])
+  changedByUser User? @relation("UserHistoryChangedBy", fields: [changedBy], references: [id])
+
+  @@map("user_histories")
+}
+
+model Certificate {
+  id          Int      @id @default(autoincrement())
+  title       String
+  description String?
+  issuer      String?
+  issueDate   DateTime?
+  fileUrl     String?
+  userId      Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("certificates")
+}
+
+model Carousel {
+  id        Int      @id @default(autoincrement())
+  title     String
+  imageUrl  String
+  linkUrl   String?
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy Int
+
+  creator User @relation(fields: [createdBy], references: [id])
+
+  @@map("carousels")
+}
+
+model Policy {
+  id          Int      @id @default(autoincrement())
+  title       String
+  content     String   @db.Text
+  tags        String?
+  videoUrl    String?
+  fileUrl     String?
+  isDraft     Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   Int
+
+  creator User @relation(fields: [createdBy], references: [id])
+
+  @@map("policies")
+}
+
+model Achievement {
+  id          Int      @id @default(autoincrement())
+  title       String
+  content     String   @db.Text
+  tags        String?
+  videoUrl    String?
+  fileUrl     String?
+  isDraft     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   Int
+
+  creator User @relation(fields: [createdBy], references: [id])
+
+  @@map("achievements")
+}
+
+model Base {
+  id          Int      @id @default(autoincrement())
+  name        String
+  type        String
+  address     String
+  contact     String?
+  description String?  @db.Text
+  isActive    Boolean  @default(true)
+  isApproved  Boolean  @default(false)
+  rejectReason String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   Int?
+  managerId   Int?
+
+  creator User?  @relation("CreatedBases", fields: [createdBy], references: [id])
+  manager User?  @relation("ManagedBases", fields: [managerId], references: [id])
+  activities Activity[]
+  coupons    BaseCoupon[]
+
+  @@map("bases")
+}
+
+model Activity {
+  id          Int           @id @default(autoincrement())
+  name        String
+  type        String
+  description String?       @db.Text
+  time        DateTime
+  location    String
+  maxPeople   Int?
+  price       Float?        // 研学活动价格
+  isActive    Boolean       @default(true)
+  isApproved  Boolean       @default(false)
+  rejectReason String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  baseId      Int
+  createdBy   Int?
+
+  base     Base           @relation(fields: [baseId], references: [id], onDelete: Cascade)
+  users    UserActivity[]
+  orders   Order[]        // 活动订单
+  creator  User?          @relation("CreatedActivities", fields: [createdBy], references: [id])
+
+  @@map("activities")
+}
+
+model UserActivity {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  activityId Int
+  status     ActivityStatus @default(REGISTERED)
+  adminNote  String?  // 管理员备注
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, activityId])
+  @@map("user_activities")
+}
+
+model Service {
+  id              Int      @id @default(autoincrement())
+  title           String
+  description     String   @db.Text
+  tags            String?
+  coverImage      String?
+  price           Float?
+  maxPeople       Int?
+  endTime         DateTime?
+  videoUrl        String?
+  fileUrl         String?
+  isActive        Boolean  @default(true)
+  isHot           Boolean  @default(false)
+  sortOrder       Int      @default(0)
+
+  // 赛事活动特有字段
+  eventType       ServiceEventType @default(SPECIAL_SERVICE)
+  location        String?
+  registerDeadline DateTime?
+  eventRules      String?  @db.Text
+  eventResults    String?  @db.Text
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       Int
+
+  creator User    @relation(fields: [createdBy], references: [id])
+  orders  Order[]
+
+  @@map("services")
+}
+
+model Order {
+  id             Int           @id @default(autoincrement())
+  orderNo        String        @unique
+  userId         Int
+  serviceId      Int?
+  activityId     Int?
+  amount         Float
+  originalAmount Float?
+  discountAmount Float        @default(0)
+  couponCode     String?      @db.VarChar(16)
+  baseCouponId   Int?
+  status         OrderStatus   @default(PENDING)
+  paymentMethod  String?       // 支付方式：'balance', 'alipay', 'wechat'等
+  userNote       String?
+  adminNote      String?
+  isRefunded     Boolean       @default(false)  // 是否已退款
+  refundedAmount Float         @default(0)     // 已退款金额
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  user     User       @relation(fields: [userId], references: [id])
+  service  Service?   @relation(fields: [serviceId], references: [id])
+  activity Activity? @relation(fields: [activityId], references: [id])
+  baseCoupon BaseCoupon? @relation(fields: [baseCouponId], references: [id])
+  refunds  Refund[]                           // 退款记录
+  balanceTransactions BalanceTransaction[]    // 余额交易记录
+
+  @@map("orders")
+}
+
+model Favorite {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  targetType String   // 'policy' 或 'activity'
+  targetId   Int      // 对应的Policy或Activity的ID
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, targetType, targetId])
+  @@map("favorites")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ACTIVITY_ADMIN
+  STUDENT
+}
+
+enum ActivityStatus {
+  REGISTERED
+  APPROVED
+  REJECTED
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  CANCELLED
+}
+
+enum ServiceEventType {
+  COMPETITION      // 赛事活动
+  STUDY_TOUR       // 研学活动
+  SOCIAL_PRACTICE  // 社会实践
+  PUBLIC_WELFARE  // 公益活动
+  SPECIAL_SERVICE  // 特色服务
+}
+
+model Notification {
+  id          Int      @id @default(autoincrement())
+  title       String
+  content     String   @db.Text
+  type        NotificationType @default(INFO)
+  targetRole  Role?    // 为指定角色显示的通知，null表示所有用户
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  createdBy  Int
+
+  creator User @relation(fields: [createdBy], references: [id])
+
+  @@map("notifications")
+}
+
+model BalanceTransaction {
+  id          Int                 @id @default(autoincrement())
+  userId      Int
+  type        BalanceTransactionType
+  amount      Float
+  balance     Float               // 交易后余额
+  description String?             // 交易描述
+  orderId     Int?                // 关联的订单ID（如果有）
+  createdAt   DateTime            @default(now())
+
+  user  User   @relation(fields: [userId], references: [id])
+  order Order? @relation(fields: [orderId], references: [id])
+
+  @@map("balance_transactions")
+}
+
+model Refund {
+  id          Int       @id @default(autoincrement())
+  orderId     Int
+  amount      Float
+  reason      String?   // 退款原因
+  status      String    @default("PENDING") // PENDING, APPROVED, REJECTED
+  processedBy Int?      // 处理人（管理员ID）
+  processedAt DateTime? // 处理时间
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id])
+
+  @@map("refunds")
+}
+
+enum NotificationType {
+  INFO
+  WARNING
+  SUCCESS
+  ERROR
+  ANNOUNCEMENT
+}
+
+enum BalanceTransactionType {
+  RECHARGE    // 充值
+  PAYMENT     // 支付消费
+  REFUND      // 退款返还
+  REWARD      // 奖励
+  GIFT_CARD   // 礼品卡充值
+}
+
+model GiftCard {
+  id          Int      @id @default(autoincrement())
+  cardCode    String   @unique @db.VarChar(16)  // 礼品卡码，16位
+  amount      Float    // 礼品卡金额
+  totalUses   Int      @default(1)             // 总可用次数
+  usedCount   Int      @default(0)             // 已使用次数
+  isUsed      Boolean  @default(false)           // 是否已使用
+  isActive    Boolean  @default(true)            // 是否启用
+  usedBy      Int?                             // 使用者用户ID
+  usedAt      DateTime?                        // 使用时间
+  expiresAt   DateTime?                        // 有效期
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User? @relation(fields: [usedBy], references: [id])
+
+  @@map("gift_cards")
+}
+
+model BaseCoupon {
+  id          Int      @id @default(autoincrement())
+  couponCode  String   @db.VarChar(16)
+  amount      Float
+  baseId      Int
+  usageLimit  Int      @default(1)
+  usedCount   Int      @default(0)
+  isUsed      Boolean  @default(false)
+  usedBy      Int?
+  usedAt      DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  base Base  @relation(fields: [baseId], references: [id], onDelete: Cascade)
+  user User? @relation("BaseCouponUsedBy", fields: [usedBy], references: [id])
+  orders Order[]
+
+  @@unique([baseId, couponCode])
+  @@map("base_coupons")
+}

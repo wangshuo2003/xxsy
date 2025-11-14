@@ -1,0 +1,29 @@
+{
+  "name": "education-platform-admin",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.1.0",
+    "axios": "^1.6.2",
+    "echarts": "^5.4.3",
+    "element-plus": "2.3.8",
+    "pinia": "^2.1.7",
+    "quill": "^2.0.3",
+    "vue": "^3.3.8",
+    "vue-echarts": "^6.6.1",
+    "vue-quill-editor": "^3.0.6",
+    "vue-router": "^4.2.5",
+    "vuedraggable": "^2.24.3"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^4.5.0",
+    "unplugin-auto-import": "^0.17.2",
+    "unplugin-vue-components": "^0.25.2",
+    "vite": "^5.0.0"
+  }
+}
