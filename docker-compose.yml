@@ -49,3 +49,5 @@ services:
 
 volumes:
   mysql_data:
+    external: true
+    name: xxsy_mysql_data
