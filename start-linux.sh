@@ -5,6 +5,7 @@ PLATFORM_NAME="Linux"
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 MAX_RETRIES=5
 RETRY_INTERVAL=5
+PROJECT_NAME="xxsy"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "[$PLATFORM_NAME] 未检测到 Docker，请先安装 Docker Engine。" >&2
@@ -29,7 +30,7 @@ if ! docker compose version >/dev/null 2>&1; then
 fi
 
 compose_run() {
-  (cd "$ROOT_DIR" && "${compose_cmd[@]}" "$@")
+  (cd "$ROOT_DIR" && COMPOSE_PROJECT_NAME="$PROJECT_NAME" "${compose_cmd[@]}" "$@")
 }
 
 compose_args=(up -d)

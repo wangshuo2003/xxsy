@@ -5,6 +5,8 @@ Param(
 $platform = "Windows"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $scriptDir
+$projectName = "xxsy"
+$env:COMPOSE_PROJECT_NAME = $projectName
 
 function Test-DockerEngine {
     try {
