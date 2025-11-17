@@ -1,10 +1,12 @@
 <template>
   <div class="debug-test">
-    <h1>调试测试页面</h1>
 
     <!-- 用户信息 -->
     <div class="section">
-      <h2>用户信息</h2>
+      <div class="section-header">
+        <h2>用户信息</h2>
+        <el-button type="danger" size="small" @click="handleLogout">退出登录</el-button>
+      </div>
       <p>用户名: {{ userStore.user?.username }}</p>
       <p>姓名: {{ userStore.user?.name }}</p>
       <p>角色: {{ userStore.user?.role }}</p>
@@ -86,6 +88,12 @@ import request from '@/api/request'
 
 const router = useRouter()
 const userStore = useUserStore()
+
+const handleLogout = () => {
+  userStore.logout()
+  router.push('/login')
+  ElMessage.success('已退出登录')
+}
 
 // 响应式数据
 const baseTestLoading = ref(false)
@@ -278,6 +286,19 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.debug-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.debug-header p {
+  margin: 0;
+  color: #909399;
+  font-size: 14px;
+}
+
 .debug-test {
   padding: 20px;
   max-width: 1200px;
@@ -290,6 +311,17 @@ onMounted(() => {
   border: 1px solid #e4e7ed;
   border-radius: 8px;
   background-color: #fff;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.section-header h2 {
+  margin: 0;
 }
 
 .section h2 {

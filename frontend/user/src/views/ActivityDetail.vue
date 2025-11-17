@@ -69,7 +69,16 @@
 
         <div class="main-actions">
           <van-button
-            v-if="hasPaidForActivity(activity) && canRefund(activity)"
+            v-if="hasPendingRefund(activity)"
+            type="warning"
+            size="large"
+            block
+            disabled
+          >
+            退款审核中
+          </van-button>
+          <van-button
+            v-else-if="hasPaidForActivity(activity) && canRefund(activity)"
             type="warning"
             size="large"
             block
@@ -78,6 +87,24 @@
             class="refund-button"
           >
             申请退款
+          </van-button>
+          <van-button
+            v-else-if="hasPaidForActivity(activity)"
+            type="success"
+            size="large"
+            block
+            disabled
+          >
+            已付款
+          </van-button>
+          <van-button
+            v-else-if="hasRefundCompleted(activity)"
+            type="default"
+            size="large"
+            block
+            disabled
+          >
+            已退款
           </van-button>
           <van-button
             v-else-if="canRegister(activity) || isRegisteredUnpaid(activity)"
@@ -125,6 +152,31 @@
       <van-empty description="活动不存在或已被删除" />
     </div>
   </div>
+
+  <van-dialog
+    v-model:show="showRefundDialog"
+    title="申请退款"
+    show-cancel-button
+    confirm-button-text="提交申请"
+    cancel-button-text="取消"
+    :confirm-button-loading="refunding"
+    :close-on-click-overlay="false"
+    @confirm="submitRefundRequest"
+    @cancel="handleCloseRefundDialog"
+  >
+    <div class="refund-dialog-content">
+      <van-field
+        v-model="refundReason"
+        type="textarea"
+        rows="3"
+        maxlength="100"
+        show-word-limit
+        placeholder="请输入退款原因（选填）"
+        class="refund-dialog-field"
+      />
+      <p class="refund-dialog-tip">提交后需管理员审核，审核通过后金额将退回至账户余额。</p>
+    </div>
+  </van-dialog>
 </template>
 
 <script setup>
@@ -148,6 +200,8 @@ const userRegistration = ref(null) // 用户的报名信息
 const isFavorited = ref(false) // 是否已收藏
 const favoriteId = ref(null) // 收藏的ID
 const userOrders = ref([]) // 用户的订单列表
+const showRefundDialog = ref(false)
+const refundReason = ref('')
 
 // 获取用户订单
 const fetchUserOrders = async () => {
@@ -311,29 +365,46 @@ const isRegisteredUnpaid = (activity) => {
   return isRegistered(activity) && !hasPaidForActivity(activity) && (activity.price && activity.price > 0)
 }
 
+const findOrderForActivity = (activityId) => {
+  return userOrders.value.find(order => order.activityId === activityId)
+}
+
 // 检查是否已支付
 const hasPaidForActivity = (activity) => {
-  // 免费活动不显示"已付款"，而是显示报名状态
   if (activity.price === 0 || !activity.price) {
     return false
   }
-  // 检查用户是否有该活动的已支付订单
-  return userOrders.value.some(order =>
-    order.activityId === activity.id &&
-    (order.status === 'PAID' || order.status === 'COMPLETED')
-  )
+  const order = findOrderForActivity(activity.id)
+  if (!order) return false
+  if (order.status === 'REFUNDED') return false
+  return ['PAID', 'REFUNDING', 'COMPLETED'].includes(order.status)
+}
+
+const hasPendingRefund = (activity) => {
+  const order = findOrderForActivity(activity.id)
+  return order?.status === 'REFUNDING'
+}
+
+const hasRefundCompleted = (activity) => {
+  const order = findOrderForActivity(activity.id)
+  return order?.status === 'REFUNDED'
 }
 
 // 获取按钮文本
 const getButtonText = (activity) => {
+  const order = findOrderForActivity(activity.id)
+  if (order?.status === 'REFUNDING') {
+    return '退款审核中'
+  }
+  if (order?.status === 'REFUNDED') {
+    return '已退款'
+  }
   if (hasPaidForActivity(activity)) {
     return '已付款'
   } else if (isRegisteredUnpaid(activity)) {
     return '立即支付'
   } else if (isRegistered(activity)) {
-    // 免费活动显示报名状态，付费活动显示取消报名
     if (activity.price === 0 || !activity.price) {
-      // 免费活动：根据报名状态显示不同文本
       const statusMap = {
         'REGISTERED': '已报名待审核',
         'APPROVED': '报名已通过',
@@ -350,25 +421,30 @@ const getButtonText = (activity) => {
 
 // 获取按钮类型
 const getButtonType = (activity) => {
+  const order = findOrderForActivity(activity.id)
+  if (order?.status === 'REFUNDING') {
+    return 'warning'
+  }
+  if (order?.status === 'REFUNDED') {
+    return 'default'
+  }
   if (hasPaidForActivity(activity)) {
-    return 'success' // 已付款按钮用成功色
+    return 'success'
   } else if (isRegisteredUnpaid(activity)) {
-    return 'warning' // 支付按钮用警告色
+    return 'warning'
   } else if (isRegistered(activity)) {
-    // 免费活动显示状态颜色，付费活动显示取消报名颜色
     if (activity.price === 0 || !activity.price) {
-      // 免费活动：根据报名状态显示不同颜色
       const typeMap = {
-        'REGISTERED': 'warning', // 待审核用警告色
-        'APPROVED': 'success',   // 已通过用成功色
-        'REJECTED': 'danger'     // 已拒绝用危险色
+        'REGISTERED': 'warning',
+        'APPROVED': 'success',
+        'REJECTED': 'danger'
       }
       return typeMap[userRegistration.value?.status] || 'default'
     } else {
-      return 'danger' // 取消报名用危险色
+      return 'danger'
     }
   } else {
-    return 'primary' // 报名按钮用主色
+    return 'primary'
   }
 }
 
@@ -479,62 +555,50 @@ const handleCancelRegistration = async () => {
 const canRefund = (activity) => {
   if (!hasPaidForActivity(activity)) return false
 
-  // 获取用户已支付的订单
-  const paidOrder = userOrders.value.find(order =>
-    order.activityId === activity.id &&
-    (order.status === 'PAID' || order.status === 'COMPLETED')
-  )
+  const paidOrder = findOrderForActivity(activity.id)
+  if (!paidOrder || paidOrder.status !== 'PAID') return false
 
-  // 检查订单是否可以退款（例如，活动开始前可以退款）
-  if (!paidOrder) return false
-
-  // 这里可以根据业务需求添加更多条件，比如：
-  // - 活动开始前24小时内不能退款
-  // - 特殊类型的活动不能退款等
   const activityTime = new Date(activity.time)
   const now = new Date()
   const timeDiff = activityTime - now
 
-  // 如果活动在24小时内开始，不允许退款
   return timeDiff > 24 * 60 * 60 * 1000
 }
 
-// 处理退款
-const handleRefund = async () => {
+const handleRefund = () => {
+  refundReason.value = ''
+  showRefundDialog.value = true
+}
+
+const submitRefundRequest = async () => {
+  if (!activity.value) return
+  if (refunding.value) return
+  const paidOrder = findOrderForActivity(activity.value.id)
+
+  if (!paidOrder || paidOrder.status !== 'PAID') {
+    showToast('找不到可退款的订单')
+    return
+  }
+
   try {
-    await showConfirmDialog({
-      title: '申请退款',
-      message: '确定要申请退款吗？退款金额将返还到您的账户余额中。',
-    })
-
     refunding.value = true
-
-    // 获取已支付的订单
-    const paidOrder = userOrders.value.find(order =>
-      order.activityId === activity.value.id &&
-      (order.status === 'PAID' || order.status === 'COMPLETED')
-    )
-
-    if (!paidOrder) {
-      showToast('找不到可退款的订单')
-      return
-    }
-
-    // 调用自动退款API
-    const response = await request.post(`/orders/${paidOrder.id}/auto-refund`, {
-      reason: '用户申请退款'
+    await request.post(`/orders/${paidOrder.id}/refund`, {
+      reason: refundReason.value.trim() || '用户申请退款'
     })
-
-    showSuccessToast('退款成功！金额已返还到您的账户余额')
-
-    // 刷新用户订单列表
+    showSuccessToast('退款申请已提交')
+    showRefundDialog.value = false
     await fetchUserOrders()
-
   } catch (error) {
     console.error('退款失败:', error)
     showToast(error.response?.data?.error || '退款失败，请稍后重试')
   } finally {
     refunding.value = false
+  }
+}
+
+const handleCloseRefundDialog = () => {
+  if (!refunding.value) {
+    showRefundDialog.value = false
   }
 }
 
@@ -700,4 +764,19 @@ onMounted(() => {
   align-items: center;
   height: 50vh;
 }
+
+.refund-dialog-content {
+  padding: 12px 0;
+}
+
+.refund-dialog-tip {
+  font-size: 12px;
+  color: #999;
+  margin: 8px 0 0;
+}
+
+.refund-dialog-field {
+  margin-bottom: 8px;
+}
+
 </style>

@@ -76,7 +76,13 @@ router.get('/', authMiddleware, async (req, res) => {
     }
     // 管理员和超级管理员可以看到所有订单
 
-    if (status) where.status = status
+    if (status) {
+      if (status === 'REFUND') {
+        where.status = { in: ['REFUNDING', 'REFUNDED'] }
+      } else {
+        where.status = status
+      }
+    }
     if (serviceId) where.serviceId = parseInt(serviceId)
 
     const orders = await prisma.order.findMany({
@@ -87,7 +93,8 @@ router.get('/', authMiddleware, async (req, res) => {
       include: {
         user: { select: { name: true, phone: true, school: true } },
         service: { select: { title: true, coverImage: true } },
-        activity: { select: { id: true, name: true } }
+        activity: { select: { id: true, name: true, type: true } },
+        refunds: { orderBy: { createdAt: 'desc' } }
       }
     })
 
@@ -237,7 +244,7 @@ router.post('/activity', authMiddleware, [
         status: { in: ['PENDING', 'PAID'] }
       },
       include: {
-        activity: { select: { id: true, name: true, baseId: true } }
+        activity: { select: { id: true, name: true, type: true, baseId: true } }
       }
     })
 
@@ -270,7 +277,7 @@ router.post('/activity', authMiddleware, [
               baseCouponId: coupon.id
             },
             include: {
-              activity: { select: { id: true, name: true, baseId: true } }
+              activity: { select: { id: true, name: true, type: true, baseId: true } }
             }
           })
         }
@@ -299,7 +306,7 @@ router.post('/activity', authMiddleware, [
           where: { id: orderToPay.id },
           data: { userNote },
           include: {
-            activity: { select: { id: true, name: true, baseId: true } }
+            activity: { select: { id: true, name: true, type: true, baseId: true } }
           }
         })
       }
@@ -323,7 +330,7 @@ router.post('/activity', authMiddleware, [
               paymentMethod: 'balance'
             },
             include: {
-              activity: { select: { id: true, name: true } }
+              activity: { select: { id: true, name: true, type: true } }
             }
           })
 
@@ -362,7 +369,7 @@ router.post('/activity', authMiddleware, [
         userNote
       },
       include: {
-        activity: { select: { id: true, name: true } }
+        activity: { select: { id: true, name: true, type: true } }
       }
     })
 
@@ -416,7 +423,7 @@ router.put('/:id/cancel', authMiddleware, async (req, res) => {
       where: { id: parseInt(req.params.id) },
       include: {
         service: { select: { title: true } },
-        activity: { select: { id: true, name: true } }
+        activity: { select: { id: true, name: true, type: true } }
       }
     })
 
@@ -507,7 +514,7 @@ router.post('/:id/refund', authMiddleware, [
       where: { id: orderId },
       include: {
         user: { select: { name: true } },
-        activity: { select: { id: true, name: true } },
+        activity: { select: { id: true, name: true, type: true } },
         service: { select: { title: true } }
       }
     })
@@ -538,6 +545,11 @@ router.post('/:id/refund', authMiddleware, [
       }
     })
 
+    await prisma.order.update({
+      where: { id: orderId },
+      data: { status: 'REFUNDING' }
+    })
+
     res.status(201).json({
       message: '退款申请已提交，请等待审核',
       data: refund
@@ -557,7 +569,7 @@ router.post('/:id/auto-refund', authMiddleware, async (req, res) => {
     const order = await prisma.order.findUnique({
       where: { id: orderId },
       include: {
-        activity: { select: { id: true, name: true } },
+        activity: { select: { id: true, name: true, type: true } },
         service: { select: { title: true } }
       }
     })

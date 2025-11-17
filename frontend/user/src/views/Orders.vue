@@ -44,6 +44,8 @@
           <div class="order-details">
             <h4>{{ getOrderName(order) }}</h4>
             <p class="order-type">{{ getOrderType(order) }}</p>
+            <p v-if="order.status === 'REFUNDING'" class="refund-status-text">退款审核中</p>
+            <p v-else-if="order.status === 'REFUNDED'" class="refund-status-text refunded">已退款</p>
             <p class="order-time">下单时间：{{ formatDateTime(order.createdAt) }}</p>
             <p v-if="order.status === 'PAID'" class="payment-time">付款时间：{{ formatDateTime(order.updatedAt) }}</p>
           </div>
@@ -78,6 +80,25 @@
         </div>
       </div>
     </div>
+
+    <div v-if="totalPages > 1" class="orders-pagination">
+      <van-button size="small" :disabled="currentPage <= 1" @click="handleGoToFirst">首页</van-button>
+      <van-button size="small" :disabled="currentPage <= 1" @click="handlePrevPage">上一页</van-button>
+      <span class="page-info">第 {{ currentPage }} / {{ totalPages }} 页</span>
+      <van-button size="small" :disabled="currentPage >= totalPages" @click="handleNextPage">下一页</van-button>
+      <van-button size="small" :disabled="currentPage >= totalPages" @click="handleGoToLast">末页</van-button>
+      <div class="jump-section">
+        <van-field
+          v-model="jumpPageInput"
+          type="digit"
+          placeholder="页码"
+          class="jump-input"
+          maxlength="4"
+          @keyup.enter="handleJumpPage"
+        />
+        <van-button size="small" type="primary" @click="handleJumpPage">跳转</van-button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -92,6 +113,10 @@ const router = useRouter()
 const loading = ref(true)
 const orders = ref([])
 const filterStatus = ref('all')
+const currentPage = ref(1)
+const itemsPerPage = 10
+const totalOrders = ref(0)
+const jumpPageInput = ref('')
 
 const statusTabs = [
   { label: '全部', value: 'all' },
@@ -100,40 +125,50 @@ const statusTabs = [
   { label: '退款', value: 'REFUND' }
 ]
 
-const filteredOrders = computed(() => {
-  if (filterStatus.value === 'PAID') {
-    return orders.value.filter(order => order.status === 'PAID' && !order.isRefunded)
-  }
-  if (filterStatus.value === 'PENDING') {
-    return orders.value.filter(order => order.status === 'PENDING')
-  }
-  if (filterStatus.value === 'REFUND') {
-    return orders.value.filter(order => order.isRefunded)
-  }
-  return orders.value
-})
+const filteredOrders = computed(() => orders.value)
 
 const setFilterStatus = (status) => {
+  if (filterStatus.value === status) return
   filterStatus.value = status
+  currentPage.value = 1
+  fetchOrders()
 }
 
 // 获取订单列表
 const fetchOrders = async () => {
+  loading.value = true
   try {
-    const response = await request.get('/orders')
-    console.log('Orders response:', response) // 添加调试日志
-    console.log('Response data type:', typeof response.data)
-    console.log('Response data is array:', Array.isArray(response.data))
-    console.log('Response data length:', response.data?.length)
-    console.log('First order:', response.data?.[0])
+    const params = {
+      page: currentPage.value,
+      limit: itemsPerPage
+    }
+    if (filterStatus.value !== 'all') {
+      params.status = filterStatus.value
+    }
 
-    // 确保订单数据是数组
-    const ordersArray = Array.isArray(response.data) ? response.data : []
-    orders.value = ordersArray
+    const response = await request.get('/orders', { params })
 
-    console.log('Orders value after assignment:', orders.value)
-    console.log('Orders is array:', Array.isArray(orders.value))
-    console.log('Orders length:', orders.value.length)
+    const extractOrders = (payload) => {
+      if (Array.isArray(payload)) return payload
+      if (Array.isArray(payload?.data)) return payload.data
+      if (Array.isArray(payload?.records)) return payload.records
+      if (Array.isArray(payload?.list)) return payload.list
+      if (Array.isArray(payload?.data?.data)) return payload.data.data
+      return []
+    }
+
+    const ordersArray = extractOrders(response)
+    const pagination = response.pagination || {}
+    const total = typeof pagination.total === 'number' ? pagination.total : ordersArray.length
+    const pageCount = pagination.pages || Math.max(1, Math.ceil((total || 1) / itemsPerPage))
+
+    if (ordersArray.length === 0 && total > 0 && currentPage.value > pageCount) {
+      currentPage.value = pageCount
+      return fetchOrders()
+    }
+
+    orders.value = ordersArray.map(order => ({ ...order }))
+    totalOrders.value = total
   } catch (error) {
     console.error('获取订单失败:', error)
     showToast('获取订单失败')
@@ -156,7 +191,14 @@ const getOrderName = (order) => {
 // 获取订单类型
 const getOrderType = (order) => {
   if (order.activity) {
-    return '研学活动'
+    const typeMap = {
+      '研学': '研学活动',
+      '公益': '公益活动',
+      '实践': '实践活动',
+      '赛事': '赛事活动'
+    }
+    const activityType = order.activity.type
+    return typeMap[activityType] || (activityType ? `${activityType}活动` : '活动订单')
   }
   if (order.service) {
     return '特色服务'
@@ -181,7 +223,9 @@ const getStatusText = (status) => {
   const statusMap = {
     'PENDING': '待支付',
     'PAID': '已支付',
-    'CANCELLED': '已取消'
+    'CANCELLED': '已取消',
+    'REFUNDING': '退款处理中',
+    'REFUNDED': '已退款'
   }
   return statusMap[status] || status
 }
@@ -191,7 +235,9 @@ const getStatusClass = (status) => {
   const classMap = {
     'PENDING': 'status-pending',
     'PAID': 'status-paid',
-    'CANCELLED': 'status-cancelled'
+    'CANCELLED': 'status-cancelled',
+    'REFUNDING': 'status-refunding',
+    'REFUNDED': 'status-refunded'
   }
   return classMap[status] || ''
 }
@@ -269,6 +315,45 @@ const handleGoBack = () => {
   }
 }
 
+const totalPages = computed(() => Math.max(1, Math.ceil((totalOrders.value || 0) / itemsPerPage)))
+
+const handlePrevPage = () => {
+  if (currentPage.value <= 1) return
+  currentPage.value -= 1
+  fetchOrders()
+}
+
+const handleNextPage = () => {
+  if (currentPage.value >= totalPages.value) return
+  currentPage.value += 1
+  fetchOrders()
+}
+
+const handleGoToFirst = () => {
+  if (currentPage.value === 1) return
+  currentPage.value = 1
+  fetchOrders()
+}
+
+const handleGoToLast = () => {
+  if (currentPage.value === totalPages.value) return
+  currentPage.value = totalPages.value
+  fetchOrders()
+}
+
+const handleJumpPage = () => {
+  const target = parseInt(jumpPageInput.value, 10)
+  if (Number.isNaN(target)) {
+    showToast('请输入正确的页码')
+    return
+  }
+  const normalized = Math.min(Math.max(1, target), totalPages.value)
+  if (normalized === currentPage.value) return
+  currentPage.value = normalized
+  fetchOrders()
+  jumpPageInput.value = ''
+}
+
 onMounted(() => {
   fetchOrders()
 })
@@ -322,6 +407,30 @@ onMounted(() => {
   padding: 16px;
 }
 
+.orders-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px 24px;
+}
+
+.orders-pagination .page-info {
+  font-size: 14px;
+  color: #666;
+}
+
+.jump-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.jump-input {
+  width: 80px;
+}
+
 .order-card {
   background: white;
   border-radius: 8px;
@@ -367,6 +476,14 @@ onMounted(() => {
   color: #969799;
 }
 
+.status-refunding {
+  color: #ffb300;
+}
+
+.status-refunded {
+  color: #1989fa;
+}
+
 .order-content {
   display: flex;
   gap: 12px;
@@ -397,6 +514,16 @@ onMounted(() => {
   margin: 4px 0;
   font-size: 13px;
   color: #666;
+}
+
+.refund-status-text {
+  font-size: 12px;
+  color: #ffb300;
+  margin: 0;
+}
+
+.refund-status-text.refunded {
+  color: #07c160;
 }
 
 .order-time {

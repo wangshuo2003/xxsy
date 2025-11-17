@@ -150,6 +150,11 @@ const favoriteMap = ref({}) // 存储收藏状态和ID的映射
 const finished = computed(() => !props.loading && props.activities.length > 0)
 const userOrders = ref([]) // 用户的订单列表
 
+const findOrderForActivity = (activityId) => {
+  return userOrders.value.find(order => order.activityId === activityId)
+}
+
+
 // 获取用户订单
 const fetchUserOrders = async () => {
   if (!userStore.isLoggedIn) {
@@ -302,15 +307,13 @@ const isRegistered = (activity) => {
 
 // 检查是否已支付
 const hasPaidForActivity = (activity) => {
-  // 免费活动不显示"已付款"，而是显示报名状态
   if (activity.price === 0 || !activity.price) {
     return false
   }
-  // 检查用户是否有该活动的已支付订单
-  return userOrders.value.some(order =>
-    order.activityId === activity.id &&
-    (order.status === 'PAID' || order.status === 'COMPLETED')
-  )
+  const order = findOrderForActivity(activity.id)
+  if (!order) return false
+  if (order.status === 'REFUNDED') return false
+  return ['PAID', 'REFUNDING', 'COMPLETED'].includes(order.status)
 }
 
 // 检查是否已报名但未支付
@@ -320,12 +323,16 @@ const isRegisteredUnpaid = (activity) => {
 
 // 获取已报名活动的按钮文本
 const getRegisteredButtonText = (activity) => {
-  if (hasPaidForActivity(activity)) {
+  const order = findOrderForActivity(activity.id)
+  if (order?.status === 'REFUNDING') {
+    return '退款审核中'
+  } else if (order?.status === 'REFUNDED') {
+    return '已退款'
+  } else if (hasPaidForActivity(activity)) {
     return '已付款'
   } else if (isRegisteredUnpaid(activity)) {
     return '立即支付'
   } else {
-    // 免费活动或已处理的付费活动，显示具体状态
     const statusMap = {
       'REGISTERED': '已报名待审核',
       'APPROVED': '报名已通过',
@@ -337,16 +344,20 @@ const getRegisteredButtonText = (activity) => {
 
 // 获取已报名活动的按钮类型
 const getRegisteredButtonType = (activity) => {
-  if (hasPaidForActivity(activity)) {
-    return 'success' // 已付款用成功色
+  const order = findOrderForActivity(activity.id)
+  if (order?.status === 'REFUNDING') {
+    return 'warning'
+  } else if (order?.status === 'REFUNDED') {
+    return 'default'
+  } else if (hasPaidForActivity(activity)) {
+    return 'success'
   } else if (isRegisteredUnpaid(activity)) {
-    return 'warning' // 待支付用警告色
+    return 'warning'
   } else {
-    // 根据报名状态显示不同颜色
     const typeMap = {
-      'REGISTERED': 'warning', // 待审核用警告色
-      'APPROVED': 'success',   // 已通过用成功色
-      'REJECTED': 'danger'     // 已拒绝用危险色
+      'REGISTERED': 'warning',
+      'APPROVED': 'success',
+      'REJECTED': 'danger'
     }
     return typeMap[activity.registrationStatus] || 'default'
   }

@@ -292,6 +292,8 @@ enum OrderStatus {
   PENDING
   PAID
   CANCELLED
+  REFUNDING
+  REFUNDED
 }
 
 enum ServiceEventType {
@@ -335,15 +337,16 @@ model BalanceTransaction {
 }
 
 model Refund {
-  id          Int       @id @default(autoincrement())
-  orderId     Int
-  amount      Float
-  reason      String?   // 退款原因
-  status      String    @default("PENDING") // PENDING, APPROVED, REJECTED
-  processedBy Int?      // 处理人（管理员ID）
-  processedAt DateTime? // 处理时间
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id           Int       @id @default(autoincrement())
+  orderId      Int
+  amount       Float
+  reason       String?   // 退款原因
+  status       String    @default("PENDING") // PENDING, APPROVED, REJECTED
+  processedBy  Int?      // 处理人（管理员ID）
+  processedAt  DateTime? // 处理时间
+  decisionNote String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   order Order @relation(fields: [orderId], references: [id])
 

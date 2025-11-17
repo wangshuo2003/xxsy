@@ -94,6 +94,7 @@ app.use('/api/favorites', authMiddleware, require('./routes/favorites'))
 app.use('/api/balance', require('./routes/balance').router)
 app.use('/api/gift-cards', require('./routes/giftCards'))
 app.use('/api/base-coupons', require('./routes/baseCoupons'))
+app.use('/api/refunds', require('./routes/refunds'))
 
 // 健康检查
 app.get('/health', (req, res) => {
