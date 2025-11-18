@@ -64,27 +64,48 @@ router.get('/', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMIN']
       orderBy = { name: 'asc' } // 默认按名字字母顺序
     }
 
-    const users = await prisma.user.findMany({
-      where,
-      orderBy,
-      skip: (page - 1) * limit,
-      take: parseInt(limit),
-      select: {
-        id: true,
-        username: true,
-        name: true,
-        phone: true,
-        school: true,
-        grade: true,
-        role: true,
-        avatar: true,
-        createdAt: true,
-        isDisabled: true,
-        className: true
-      }
-    })
-
     const total = await prisma.user.count({ where })
+
+    let users
+    if (where.role === 'ACTIVITY_ADMIN') {
+      users = await prisma.user.findMany({
+        where,
+        orderBy,
+        skip: (page - 1) * limit,
+        take: parseInt(limit)
+        /*,
+        include: {
+          adminOfBases: {
+            select: {
+              id: true,
+              name: true
+            }
+          }
+        }
+        */
+      })
+    } else {
+      users = await prisma.user.findMany({
+        where,
+        orderBy,
+        skip: (page - 1) * limit,
+        take: parseInt(limit),
+        select: {
+          id: true,
+          username: true,
+          name: true,
+          phone: true,
+          school: true,
+          grade: true,
+          role: true,
+          avatar: true,
+          createdAt: true,
+          isDisabled: true,
+          className: true
+        }
+      })
+    }
+
     res.json({
       data: users,
       pagination: { page: parseInt(page), limit: parseInt(limit), total, pages: Math.ceil(total / limit) }
@@ -201,11 +222,11 @@ router.post('/', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMIN'
       return res.status(403).json({ error: '权限不足' })
     }
 
-    const existingUser = await prisma.user.findFirst({
-      where: { OR: [{ username }, { phone }] }
+    const existingUser = await prisma.user.findUnique({
+      where: { username }
     })
 
-    if (existingUser) return res.status(400).json({ error: '用户名或手机号已存在' })
+    if (existingUser) return res.status(400).json({ error: '用户名已存在' })
 
     const hashedPassword = await bcrypt.hash(password, 10)
 

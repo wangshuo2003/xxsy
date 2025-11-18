@@ -457,7 +457,7 @@ router.post('/:id/register', authMiddleware, async (req, res) => {
       data: {
         userId: req.user.id,
         activityId: parseInt(req.params.id),
-        status: 'REGISTERED' // 设为已报名待审核状态
+        status: activity.price && activity.price > 0 ? 'REGISTERED' : 'APPROVED' // 免费活动自动通过
       }
     })
 

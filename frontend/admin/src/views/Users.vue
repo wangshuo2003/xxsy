@@ -56,6 +56,18 @@
         <el-table-column prop="name" label="姓名" />
         <el-table-column prop="phone" label="手机号" />
         <el-table-column
+          v-if="activeTab === 'ACTIVITY_ADMIN'"
+          label="所属基地"
+          min-width="150"
+        >
+          <template #default="{ row }">
+            <span v-if="row.adminOfBases && row.adminOfBases.length">
+              {{ row.adminOfBases.map(b => b.name).join(', ') }}
+            </span>
+            <span v-else>--</span>
+          </template>
+        </el-table-column>
+        <el-table-column
           v-if="activeTab === 'STUDENT'"
           prop="school"
           label="学校"
@@ -216,12 +228,15 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import request from '@/api/request'
 import { useUserStore } from '@/stores/user'
 
 const userStore = useUserStore()
+const route = useRoute()
+const router = useRouter()
 const loading = ref(false)
 const dialogVisible = ref(false)
 const passwordDialogVisible = ref(false)
@@ -614,9 +629,15 @@ const formatDate = (date) => {
 }
 
 onMounted(() => {
-  const firstTab = tabOptions.value[0]
-  if (firstTab) {
-    activeTab.value = firstTab.role
+  const tabFromUrl = route.query.tab
+  const availableTabs = tabOptions.value.map(t => t.role)
+  if (tabFromUrl && availableTabs.includes(tabFromUrl)) {
+    activeTab.value = tabFromUrl
+  } else {
+    const firstTab = tabOptions.value[0]
+    if (firstTab) {
+      activeTab.value = firstTab.role
+    }
   }
 })
 
@@ -632,6 +653,7 @@ watch(activeTab, (role) => {
   roleFilter.value = role
   pagination.page = 1
   loadData()
+  router.replace({ query: { ...route.query, tab: role } })
 })
 
 watch(

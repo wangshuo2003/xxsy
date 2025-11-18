@@ -113,7 +113,7 @@ const onTabChange = (name) => {
   activeTab.value = name
   appliedCategoryFilter.value = null
   // 更新URL查询参数
-  router.push({
+  router.replace({
     path: '/activities',
     query: { tab: name }
   })

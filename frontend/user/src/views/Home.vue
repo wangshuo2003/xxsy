@@ -1,14 +1,18 @@
 <template>
   <div class="home">
     <!-- 轮播图 -->
-    <van-swipe class="swipe" :autoplay="3000" indicator-color="white">
-      <van-swipe-item v-for="carousel in carousels" :key="carousel.id">
-        <a :href="carousel.linkUrl" v-if="carousel.linkUrl && carousel.linkUrl !== '#'">
-          <img :src="carousel.imageUrl" :alt="carousel.title" />
-        </a>
-        <img v-else :src="carousel.imageUrl" :alt="carousel.title" />
-      </van-swipe-item>
-    </van-swipe>
+    <div class="swipe-container">
+      <van-swipe ref="swipeRef" class="swipe" :autoplay="autoplayDuration" indicator-color="white">
+        <van-swipe-item v-for="carousel in carousels" :key="carousel.id">
+          <a :href="carousel.linkUrl" v-if="carousel.linkUrl && carousel.linkUrl !== '#'">
+            <img :src="carousel.imageUrl" :alt="carousel.title" />
+          </a>
+          <img v-else :src="carousel.imageUrl" :alt="carousel.title" />
+        </van-swipe-item>
+      </van-swipe>
+      <van-button class="swipe-nav prev" @click="prev" round icon="arrow-left" />
+      <van-button class="swipe-nav next" @click="next" round icon="arrow" />
+    </div>
 
     <!-- 最新活动 -->
     <div class="section">
@@ -84,6 +88,33 @@ const carousels = ref([])
 const policies = ref([])
 const certificates = ref([])
 const activities = ref([])
+const swipeRef = ref(null)
+const autoplayDuration = ref(3000)
+let autoplayTimeout = null
+
+const pauseAutoplay = () => {
+  if (autoplayTimeout) {
+    clearTimeout(autoplayTimeout)
+  }
+  autoplayDuration.value = 0
+  autoplayTimeout = setTimeout(() => {
+    autoplayDuration.value = 3000
+  }, 8000)
+}
+
+const prev = () => {
+  if (swipeRef.value) {
+    swipeRef.value.prev()
+    pauseAutoplay()
+  }
+}
+
+const next = () => {
+  if (swipeRef.value) {
+    swipeRef.value.next()
+    pauseAutoplay()
+  }
+}
 
 // 格式化日期
 const formatDate = (dateString) => {
@@ -176,6 +207,10 @@ onMounted(() => {
   padding-bottom: 80px;
 }
 
+.swipe-container {
+  position: relative;
+}
+
 .swipe {
   height: 200px;
 }
@@ -184,6 +219,26 @@ onMounted(() => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.swipe-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  width: 32px;
+  height: 32px;
+  background-color: rgba(0, 0, 0, 0.3);
+  border: none;
+  color: white;
+}
+
+.swipe-nav.prev {
+  left: 10px;
+}
+
+.swipe-nav.next {
+  right: 10px;
 }
 
 .nav-grid {
