@@ -33,11 +33,8 @@
 
       <div class="demo-accounts">
         <van-collapse v-model="activeNames">
-          <van-collapse-item title="查看演示账号" name="1">
-            <p>超级管理员：admin / admin</p>
-            <p>基地管理员：baseadmin / baseadmin</p>
-            <p>学生用户1：1 / 1</p>
-            <p>学生用户：student / student123</p>
+          <van-collapse-item title="演示账号" name="1">
+            <p>学生用户：studenta / 1</p>
           </van-collapse-item>
         </van-collapse>
       </div>
@@ -55,7 +52,7 @@ const router = useRouter()
 const userStore = useUserStore()
 
 const loading = ref(false)
-const activeNames = ref([])
+const activeNames = ref(['1'])
 
 const loginForm = reactive({
   username: '',
