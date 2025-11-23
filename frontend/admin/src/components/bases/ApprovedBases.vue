@@ -41,9 +41,15 @@
       <el-table-column prop="type" label="基地类型" width="120" />
       <el-table-column prop="address" label="地址" min-width="200" show-overflow-tooltip />
       <el-table-column prop="contact" label="联系方式" width="150" />
-      <el-table-column label="基地管理员" width="120">
+      <el-table-column label="基地管理员" min-width="150">
         <template #default="{ row }">
-          {{ row.manager?.name || '未设置' }}
+          <el-button 
+            type="primary" 
+            link 
+            @click="handleManageAdmins(row)"
+          >
+            {{ row.admins?.map(a => a.username).join(', ') || '未设置' }}
+          </el-button>
         </template>
       </el-table-column>
       <el-table-column prop="createdAt" label="创建时间" width="180">
@@ -79,10 +85,7 @@
           <el-descriptions-item label="地址" :span="2">{{ currentBase.address }}</el-descriptions-item>
           <el-descriptions-item label="联系方式">{{ currentBase.contact }}</el-descriptions-item>
           <el-descriptions-item label="基地管理员">
-            {{ currentBase.manager?.name || '未设置' }}
-          </el-descriptions-item>
-          <el-descriptions-item label="管理员联系方式" v-if="currentBase.manager">
-            {{ currentBase.manager.phone }}
+            {{ currentBase.admins?.map(a => a.name).join(', ') || '未设置' }}
           </el-descriptions-item>
           <el-descriptions-item label="状态">
             <el-tag :type="currentBase.isActive ? 'success' : 'danger'">
@@ -146,22 +149,6 @@
         <el-form-item label="联系方式" prop="contact">
           <el-input v-model="formData.contact" placeholder="请输入联系方式" />
         </el-form-item>
-        <el-form-item label="基地管理员" v-if="isEdit">
-          <el-select
-            v-model="formData.managerId"
-            placeholder="请选择基地管理员"
-            style="width: 100%"
-            filterable
-            clearable
-          >
-            <el-option
-              v-for="user in availableManagers"
-              :key="user.id"
-              :label="`${user.name} (${user.phone})`"
-              :value="user.id"
-            />
-          </el-select>
-        </el-form-item>
         <el-form-item label="描述">
           <el-input
             v-model="formData.description"
@@ -201,6 +188,23 @@
       </template>
     </el-dialog>
 
+    <!-- 管理员编辑对话框 -->
+    <el-dialog
+      v-model="managerEditorVisible"
+      title="管理基地管理员"
+      width="800px"
+      destroy-on-close
+      @close="handleManagerEditorClose"
+    >
+      <BaseManagerEditor
+        v-if="managerEditorVisible"
+        :base-id="currentBaseId"
+        :initial-manager-ids="currentManagerIds"
+        @cancel="managerEditorVisible = false"
+        @success="handleManagerEditorSuccess"
+      />
+    </el-dialog>
+
   </div>
 </template>
 
@@ -210,6 +214,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import request from '@/api/request'
+import BaseManagerEditor from './BaseManagerEditor.vue'
 
 const emit = defineEmits(['refresh'])
 const userStore = useUserStore()
@@ -229,7 +234,12 @@ const formVisible = ref(false)
 const isEdit = ref(false)
 const submitLoading = ref(false)
 const availableManagers = ref([])
-const originalManagerId = ref(null)
+const originalManagerIds = ref([])
+
+// 管理员编辑器相关
+const managerEditorVisible = ref(false)
+const currentBaseId = ref(0)
+const currentManagerIds = ref([])
 
 // 表单数据
 const formRef = ref()
@@ -240,7 +250,8 @@ const formData = reactive({
   address: '',
   contact: '',
   description: '',
-  isActive: true
+  isActive: true,
+  managerIds: []
 })
 
 // 表单验证规则
@@ -360,9 +371,9 @@ const handleEdit = (base) => {
     contact: base.contact,
     description: base.description || '',
     isActive: base.isActive,
-    managerId: base.managerId || base.manager?.id || null
+    managerIds: base.admins?.map(a => a.id) || []
   })
-  originalManagerId.value = formData.managerId
+  originalManagerIds.value = [...formData.managerIds]
   loadManagersList()
   formVisible.value = true
 }
@@ -377,12 +388,12 @@ const resetForm = () => {
     contact: '',
     description: '',
     isActive: true,
-    managerId: null
+    managerIds: []
   })
   if (formRef.value) {
     formRef.value.clearValidate()
   }
-  originalManagerId.value = null
+  originalManagerIds.value = []
 }
 
 // 提交表单
@@ -412,15 +423,14 @@ const handleSubmit = async () => {
 
     if (
       isEdit.value &&
-      formData.managerId &&
-      formData.managerId !== originalManagerId.value
+      JSON.stringify(formData.managerIds.sort()) !== JSON.stringify(originalManagerIds.value.sort())
     ) {
       try {
         await request.put(`/bases/${formData.id}/manager`, {
-          managerId: formData.managerId
+          managerIds: formData.managerIds
         })
         ElMessage.success('基地管理员已更新')
-        originalManagerId.value = formData.managerId
+        originalManagerIds.value = [...formData.managerIds]
       } catch (error) {
         ElMessage.error('管理员更新失败：' + (error.response?.data?.error || error.message))
       }
@@ -527,6 +537,26 @@ const refreshData = () => {
 defineExpose({
   refreshData
 })
+
+// 打开管理员编辑器
+const handleManageAdmins = (base) => {
+  currentBaseId.value = base.id
+  currentManagerIds.value = base.admins?.map(a => a.id) || []
+  managerEditorVisible.value = true
+}
+
+// 管理员编辑成功
+const handleManagerEditorSuccess = () => {
+  managerEditorVisible.value = false
+  loadData()
+  emit('refresh')
+}
+
+// 管理员编辑器关闭时刷新数据
+const handleManagerEditorClose = () => {
+  loadData()
+  emit('refresh')
+}
 
 onMounted(() => {
   loadData()

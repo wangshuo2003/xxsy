@@ -9,7 +9,7 @@ async function resetUserPassword() {
 
     // 重置admin密码
     const admin = await prisma.user.findUnique({
-      where: { username: 'admin' }
+      where: { username: 'a' }
     });
 
     if (admin) {
@@ -23,7 +23,7 @@ async function resetUserPassword() {
 
     // 重置baseadmin密码
     const baseAdmin = await prisma.user.findUnique({
-      where: { username: 'baseadmin' }
+      where: { username: 'b' }
     });
 
     if (baseAdmin) {
@@ -37,7 +37,7 @@ async function resetUserPassword() {
 
     // 重置student密码
     const student = await prisma.user.findUnique({
-      where: { username: 'studenta' }
+      where: { username: 's' }
     });
 
     if (student) {
@@ -51,9 +51,9 @@ async function resetUserPassword() {
 
     console.log('\n🎉 密码重置完成！');
     console.log('\n可用的测试账户：');
-    console.log('超级管理员: admin / 1');
-    console.log('基地管理员: baseadmin / 1');
-    console.log('学生用户: studenta / 1');
+    console.log('超级管理员: a / 1');
+    console.log('基地管理员: b / 1');
+    console.log('学生用户: s / 1');
 
   } catch (error) {
     console.error('❌ 重置密码失败:', error);

@@ -20,6 +20,7 @@ async function main() {
     }
   })
   console.log('超级管理员创建成功:', admin)
+  console.log('超级管理员ID:', admin.id)
 
   // 创建示例基地管理员
   const baseAdminPassword = await bcrypt.hash('base123', 10)
@@ -31,10 +32,11 @@ async function main() {
       password: baseAdminPassword,
       name: '基地管理员',
       phone: '13800138001',
-      role: 'BASE_ADMIN'
+      role: 'ACTIVITY_ADMIN'
     }
   })
   console.log('基地管理员创建成功:', baseAdmin)
+  console.log('基地管理员ID:', baseAdmin.id)
 
   // 创建示例学生用户
   const studentPassword = await bcrypt.hash('student123', 10)
@@ -63,10 +65,15 @@ async function main() {
       description: '专注于青少年科技创新教育',
       isApproved: true,
       isActive: true,
-      managerId: baseAdmin.id
+      createdBy: admin.id,
+      managerId: baseAdmin.id,
+      admins: {
+        connect: { id: baseAdmin.id }
+      }
     }
   })
   console.log('示例基地创建成功:', base1)
+  console.log('示例基地ID:', base1.id)
 
   // 创建示例轮播图
   const carousel1 = await prisma.carousel.create({

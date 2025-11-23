@@ -34,12 +34,41 @@ router.get('/', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMIN']
     const { user } = req
     const where = {}
 
-    // 权限控制：活动管理员只能查看学生用户
     if (user.role === 'ACTIVITY_ADMIN') {
-      where.role = 'STUDENT'
-    }
+      // 活动管理员可以查看学生用户
+      // 并且可以查看与自己管理基地相关的活动管理员
+      const managedBases = await prisma.base.findMany({
+        where: {
+          admins: {
+            some: {
+              id: user.id
+            }
+          }
+        },
+        select: {
+          id: true
+        }
+      })
+      const managedBaseIds = managedBases.map(base => base.id)
 
-    if (role && user.role === 'SUPER_ADMIN') {
+      where.OR = [
+        { role: 'STUDENT' },
+        {
+          AND: [
+            { role: 'ACTIVITY_ADMIN' },
+            {
+              adminOfBases: {
+                some: {
+                  id: {
+                    in: managedBaseIds
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    } else if (role && user.role === 'SUPER_ADMIN') {
       where.role = role
     }
 
@@ -72,8 +101,7 @@ router.get('/', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMIN']
         where,
         orderBy,
         skip: (page - 1) * limit,
-        take: parseInt(limit)
-        /*,
+        take: parseInt(limit),
         include: {
           adminOfBases: {
             select: {
@@ -82,7 +110,16 @@ router.get('/', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMIN']
             }
           }
         }
-        */
+      })
+      // Merge Base_managerId and adminOfBases
+      users = users.map(user => {
+        const allBases = [...(user.Base_managerId || []), ...(user.adminOfBases || [])]
+        // Deduplicate by ID
+        const uniqueBases = Array.from(new Map(allBases.map(item => [item.id, item])).values())
+        return {
+          ...user,
+          adminOfBases: uniqueBases
+        }
       })
     } else {
       users = await prisma.user.findMany({
@@ -105,6 +142,7 @@ router.get('/', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMIN']
         }
       })
     }
+    console.log('Users API - 返回用户数据:', users)
 
     res.json({
       data: users,
@@ -142,9 +180,45 @@ router.get('/:id', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMI
 
     if (!targetUser) return res.status(404).json({ error: '用户不存在' })
 
-    // 权限控制：活动管理员只能查看学生用户
-    if (user.role === 'ACTIVITY_ADMIN' && targetUser.role !== 'STUDENT') {
-      return res.status(403).json({ error: '权限不足' })
+    // 权限控制：活动管理员只能查看学生用户或与自己管理基地相关的活动管理员
+    if (user.role === 'ACTIVITY_ADMIN') {
+      if (targetUser.role === 'STUDENT') {
+        // OK to view students
+      } else if (targetUser.role === 'ACTIVITY_ADMIN') {
+        // Check if the target ACTIVITY_ADMIN manages any of the same bases as the current user
+        const currentUserManagedBases = await prisma.base.findMany({
+          where: {
+            admins: {
+              some: {
+                id: user.id
+              }
+            }
+          },
+          select: { id: true }
+        })
+        const currentUserManagedBaseIds = currentUserManagedBases.map(base => base.id)
+
+        const targetUserManagedBases = await prisma.base.findMany({
+          where: {
+            admins: {
+              some: {
+                id: targetUser.id
+              }
+            }
+          },
+          select: { id: true }
+        })
+        const targetUserManagedBaseIds = targetUserManagedBases.map(base => base.id)
+
+        const hasSharedBases = currentUserManagedBaseIds.some(id => targetUserManagedBaseIds.includes(id))
+
+        if (!hasSharedBases) {
+          return res.status(403).json({ error: '权限不足，无法查看该活动管理员' })
+        }
+      } else {
+        // Activity admin cannot view SUPER_ADMIN
+        return res.status(403).json({ error: '权限不足' })
+      }
     }
 
     res.json({ data: targetUser })
@@ -202,24 +276,34 @@ router.post('/', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMIN'
   body('username').notEmpty().withMessage('用户名不能为空'),
   body('password').notEmpty().withMessage('密码不能为空'),
   body('name').notEmpty().withMessage('姓名不能为空'),
-  body('phone').isLength({ min: 3, max: 20 }).withMessage('手机号长度应在3-20个字符之间'),
+  body('phone').notEmpty().withMessage('手机号不能为空').isLength({ min: 1, max: 20 }).withMessage('手机号长度应在1-20个字符之间'),
   body('role').isIn(['SUPER_ADMIN', 'ACTIVITY_ADMIN', 'STUDENT']).withMessage('角色不正确')
 ], async (req, res) => {
   try {
     const errors = validationResult(req)
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() })
+    if (!errors.isEmpty()) {
+      console.error('用户创建验证失败:', errors.array())
+      console.error('请求体:', req.body)
+      return res.status(400).json({ errors: errors.array() })
+    }
 
     const { user } = req
     const { username, password, name, phone, school, grade, className, role } = req.body
 
-    // 权限控制：活动管理员只能创建学生用户
-    if (user.role === 'ACTIVITY_ADMIN' && role !== 'STUDENT') {
-      return res.status(403).json({ error: '活动管理员只能创建学生用户' })
-    }
-
-    // 只有超级管理员可以创建活动管理员
-    if (user.role === 'ACTIVITY_ADMIN' && (role === 'SUPER_ADMIN' || role === 'ACTIVITY_ADMIN')) {
-      return res.status(403).json({ error: '权限不足' })
+    // Permission control for user creation
+    if (user.role === 'ACTIVITY_ADMIN') {
+      // Activity admins can only create student users
+      if (role !== 'STUDENT') {
+        return res.status(403).json({ error: '活动管理员只能创建学生用户' })
+      }
+    } else if (user.role === 'SUPER_ADMIN') {
+      // Super admins can create any allowed role (SUPER_ADMIN, ACTIVITY_ADMIN, STUDENT)
+      // No explicit restriction needed here as long as the role is valid by express-validator
+      // and not trying to create a role that doesn't exist.
+      // The body('role').isIn(...) validator already handles invalid roles.
+    } else {
+      // This case should ideally not be reached due to roleMiddleware, but as a safeguard.
+      return res.status(403).json({ error: '当前用户角色无权创建用户' })
     }
 
     const existingUser = await prisma.user.findUnique({
@@ -275,9 +359,45 @@ router.put('/:id', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMI
 
     if (!targetUser) return res.status(404).json({ error: '用户不存在' })
 
-    // 权限控制：活动管理员只能编辑学生用户
-    if (currentUser.role === 'ACTIVITY_ADMIN' && targetUser.role !== 'STUDENT') {
-      return res.status(403).json({ error: '权限不足' })
+    // 权限控制：活动管理员只能编辑学生用户或与自己管理基地相关的活动管理员
+    if (currentUser.role === 'ACTIVITY_ADMIN') {
+      if (targetUser.role === 'STUDENT') {
+        // OK to edit students
+      } else if (targetUser.role === 'ACTIVITY_ADMIN') {
+        // Check if the target ACTIVITY_ADMIN manages any of the same bases as the current user
+        const currentUserManagedBases = await prisma.base.findMany({
+          where: {
+            admins: {
+              some: {
+                id: currentUser.id
+              }
+            }
+          },
+          select: { id: true }
+        })
+        const currentUserManagedBaseIds = currentUserManagedBases.map(base => base.id)
+
+        const targetUserManagedBases = await prisma.base.findMany({
+          where: {
+            admins: {
+              some: {
+                id: targetUser.id
+              }
+            }
+          },
+          select: { id: true }
+        })
+        const targetUserManagedBaseIds = targetUserManagedBases.map(base => base.id)
+
+        const hasSharedBases = currentUserManagedBaseIds.some(id => targetUserManagedBaseIds.includes(id))
+
+        if (!hasSharedBases) {
+          return res.status(403).json({ error: '权限不足，无法编辑该活动管理员' })
+        }
+      } else {
+        // Activity admin cannot edit SUPER_ADMIN
+        return res.status(403).json({ error: '权限不足' })
+      }
     }
 
     const { name, phone, school, grade, className, role } = req.body
@@ -336,9 +456,45 @@ router.put('/:id/password', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTI
 
     if (!targetUser) return res.status(404).json({ error: '用户不存在' })
 
-    // 权限控制：活动管理员只能重置学生用户的密码
-    if (currentUser.role === 'ACTIVITY_ADMIN' && targetUser.role !== 'STUDENT') {
-      return res.status(403).json({ error: '权限不足' })
+    // 权限控制：活动管理员只能重置学生用户或与自己管理基地相关的活动管理员的密码
+    if (currentUser.role === 'ACTIVITY_ADMIN') {
+      if (targetUser.role === 'STUDENT') {
+        // OK to reset student password
+      } else if (targetUser.role === 'ACTIVITY_ADMIN') {
+        // Check if the target ACTIVITY_ADMIN manages any of the same bases as the current user
+        const currentUserManagedBases = await prisma.base.findMany({
+          where: {
+            admins: {
+              some: {
+                id: currentUser.id
+              }
+            }
+          },
+          select: { id: true }
+        })
+        const currentUserManagedBaseIds = currentUserManagedBases.map(base => base.id)
+
+        const targetUserManagedBases = await prisma.base.findMany({
+          where: {
+            admins: {
+              some: {
+                id: targetUser.id
+              }
+            }
+          },
+          select: { id: true }
+        })
+        const targetUserManagedBaseIds = targetUserManagedBases.map(base => base.id)
+
+        const hasSharedBases = currentUserManagedBaseIds.some(id => targetUserManagedBaseIds.includes(id))
+
+        if (!hasSharedBases) {
+          return res.status(403).json({ error: '权限不足，无法重置该活动管理员的密码' })
+        }
+      } else {
+        // Activity admin cannot reset SUPER_ADMIN password
+        return res.status(403).json({ error: '权限不足' })
+      }
     }
 
     const { newPassword } = req.body
@@ -369,8 +525,44 @@ router.put('/:id/status', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVI
 
     if (!targetUser) return res.status(404).json({ error: '用户不存在' })
 
-    if (currentUser.role === 'ACTIVITY_ADMIN' && targetUser.role !== 'STUDENT') {
-      return res.status(403).json({ error: '权限不足' })
+    if (currentUser.role === 'ACTIVITY_ADMIN') {
+      if (targetUser.role === 'STUDENT') {
+        // OK to change status of students
+      } else if (targetUser.role === 'ACTIVITY_ADMIN') {
+        // Check if the target ACTIVITY_ADMIN manages any of the same bases as the current user
+        const currentUserManagedBases = await prisma.base.findMany({
+          where: {
+            admins: {
+              some: {
+                id: currentUser.id
+              }
+            }
+          },
+          select: { id: true }
+        })
+        const currentUserManagedBaseIds = currentUserManagedBases.map(base => base.id)
+
+        const targetUserManagedBases = await prisma.base.findMany({
+          where: {
+            admins: {
+              some: {
+                id: targetUser.id
+              }
+            }
+          },
+          select: { id: true }
+        })
+        const targetUserManagedBaseIds = targetUserManagedBases.map(base => base.id)
+
+        const hasSharedBases = currentUserManagedBaseIds.some(id => targetUserManagedBaseIds.includes(id))
+
+        if (!hasSharedBases) {
+          return res.status(403).json({ error: '权限不足，无法修改该活动管理员的状态' })
+        }
+      } else {
+        // Activity admin cannot change status of SUPER_ADMIN
+        return res.status(403).json({ error: '权限不足' })
+      }
     }
 
     const { isDisabled } = req.body
@@ -407,9 +599,44 @@ router.delete('/:id', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_A
 
     if (!targetUser) return res.status(404).json({ error: '用户不存在' })
 
-    // 权限控制：活动管理员只能删除学生用户
-    if (currentUser.role === 'ACTIVITY_ADMIN' && targetUser.role !== 'STUDENT') {
-      return res.status(403).json({ error: '权限不足' })
+    if (currentUser.role === 'ACTIVITY_ADMIN') {
+      if (targetUser.role === 'STUDENT') {
+        // OK to delete students
+      } else if (targetUser.role === 'ACTIVITY_ADMIN') {
+        // Check if the target ACTIVITY_ADMIN manages any of the same bases as the current user
+        const currentUserManagedBases = await prisma.base.findMany({
+          where: {
+            admins: {
+              some: {
+                id: currentUser.id
+              }
+            }
+          },
+          select: { id: true }
+        })
+        const currentUserManagedBaseIds = currentUserManagedBases.map(base => base.id)
+
+        const targetUserManagedBases = await prisma.base.findMany({
+          where: {
+            admins: {
+              some: {
+                id: targetUser.id
+              }
+            }
+          },
+          select: { id: true }
+        })
+        const targetUserManagedBaseIds = targetUserManagedBases.map(base => base.id)
+
+        const hasSharedBases = currentUserManagedBaseIds.some(id => targetUserManagedBaseIds.includes(id))
+
+        if (!hasSharedBases) {
+          return res.status(403).json({ error: '权限不足，无法删除该活动管理员' })
+        }
+      } else {
+        // Activity admin cannot delete SUPER_ADMIN
+        return res.status(403).json({ error: '权限不足' })
+      }
     }
 
     // 防止用户删除自己

@@ -33,14 +33,19 @@ router.get('/', async (req, res) => {
       skip: (page - 1) * limit,
       take: parseInt(limit),
       include: {
-        manager: { select: { name: true, phone: true } },
-        creator: { select: { name: true } }
+        admins: { select: { id: true, name: true, phone: true, username: true } },
+        User_creator: { select: { name: true } }
       }
+    })
+    console.log('Bases API - 返回基地数据:', bases)
+
+    const processedBases = bases.map(base => {
+      return { ...base, admins: base.admins || [] }
     })
 
     const total = await prisma.base.count({ where })
     res.json({
-      data: bases,
+      data: processedBases,
       pagination: { page: parseInt(page), limit: parseInt(limit), total, pages: Math.ceil(total / limit) }
     })
   } catch (error) {
@@ -54,8 +59,7 @@ router.get('/:id', async (req, res) => {
     const base = await prisma.base.findUnique({
       where: { id: parseInt(req.params.id) },
       include: {
-        manager: { select: { name: true, phone: true } },
-        creator: { select: { name: true } },
+        User_creator: { select: { name: true } },
         activities: {
           where: { isApproved: true },
           orderBy: { time: 'desc' },
@@ -98,12 +102,16 @@ router.post('/', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMIN'
         isActive: isActive === 'true',
         isApproved: isApproved,
         createdBy: req.user.id,
-        // 如果是管理员创建，设置为基地管理员
-        managerId: req.user.role === 'ACTIVITY_ADMIN' ? req.user.id : null
+        admins: {
+          connect: [
+            ...(req.body.managerIds || []).map(id => ({ id })),
+            ...(req.user.role === 'ACTIVITY_ADMIN' ? [{ id: req.user.id }] : [])
+          ]
+        }
       },
       include: {
-        manager: { select: { name: true, phone: true } },
-        creator: { select: { name: true } }
+        admins: { select: { id: true, name: true, phone: true, username: true } },
+        User_creator: { select: { name: true } }
       }
     })
     res.status(201).json({ message, data: base })
@@ -130,7 +138,7 @@ router.post('/apply', authMiddleware, [
         isApproved: false,
         createdBy: req.user.id
       },
-      include: { creator: { select: { name: true } } }
+      include: { User_creator: { select: { name: true } } }
     })
     res.status(201).json({ message: '基地申请提交成功', data: base })
   } catch (error) {
@@ -165,8 +173,7 @@ router.put('/:id/approve', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIV
       where: { id: parseInt(req.params.id) },
       data: updateData,
       include: {
-        manager: { select: { name: true, phone: true } },
-        creator: { select: { name: true } }
+        User_creator: { select: { name: true } }
       }
     })
 
@@ -179,22 +186,27 @@ router.put('/:id/approve', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIV
 })
 
 router.put('/:id/manager', authMiddleware, roleMiddleware(['SUPER_ADMIN']), [
-  body('managerId').notEmpty().withMessage('管理员ID不能为空')
+  body('managerIds').isArray().withMessage('管理员ID必须是数组')
 ], async (req, res) => {
   try {
-    const { managerId } = req.body
+    const { managerIds } = req.body
+    console.log(`PUT /:id/manager - Received managerIds:`, managerIds)
     const base = await prisma.base.findUnique({ where: { id: parseInt(req.params.id) } })
     if (!base) return res.status(404).json({ error: '基地不存在' })
 
-    const manager = await prisma.user.findUnique({ where: { id: parseInt(managerId) } })
-    if (!manager) return res.status(404).json({ error: '用户不存在' })
+    // 验证所有用户存在
+    // 这里简化处理，直接尝试更新
 
     const updatedBase = await prisma.base.update({
       where: { id: parseInt(req.params.id) },
-      data: { managerId: parseInt(managerId) },
+      data: {
+        admins: {
+          set: managerIds.map(id => ({ id: parseInt(id) }))
+        }
+      },
       include: {
-        manager: { select: { name: true, phone: true } },
-        creator: { select: { name: true } }
+        admins: { select: { id: true, name: true, phone: true, username: true } },
+        User_creator: { select: { name: true } }
       }
     })
     res.json({ message: '基地管理员设置成功', data: updatedBase })
@@ -223,12 +235,18 @@ router.put('/:id', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMI
     if (description !== undefined) updateData.description = description
     if (isActive !== undefined) updateData.isActive = isActive
 
+    if (req.body.managerIds) {
+      updateData.admins = {
+        set: req.body.managerIds.map(id => ({ id: parseInt(id) }))
+      }
+    }
+
     const updatedBase = await prisma.base.update({
       where: { id: parseInt(req.params.id) },
       data: updateData,
       include: {
-        manager: { select: { name: true, phone: true } },
-        creator: { select: { name: true } }
+        admins: { select: { id: true, name: true, phone: true, username: true } },
+        User_creator: { select: { name: true } }
       }
     })
     res.json({ message: '基地更新成功', data: updatedBase })

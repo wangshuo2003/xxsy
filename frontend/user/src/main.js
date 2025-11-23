@@ -5,9 +5,17 @@ import 'vant/lib/index.css'
 import App from './App.vue'
 import router from './router'
 import './style.css'
+import axios from 'axios'
 
 const app = createApp(App)
 const pinia = createPinia()
+
+// Only set a baseURL when provided as a full/absolute API host; otherwise
+// keep request paths as-is (the code already prefixes with /api).
+const apiBase = import.meta.env.VITE_API_BASE_URL
+if (apiBase && !apiBase.startsWith('/api')) {
+  axios.defaults.baseURL = apiBase
+}
 
 app.use(pinia)
 app.use(router)

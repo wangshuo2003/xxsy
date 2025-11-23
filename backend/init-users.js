@@ -9,23 +9,23 @@ async function initUsers() {
 
     const accounts = [
       {
-        username: 'admin',
+        username: 'a',
         password: '1',
         name: '超级管理员',
         phone: '13800138000',
         role: 'SUPER_ADMIN'
       },
       {
-        username: 'baseadmin',
+        username: 'b',
         password: '1',
         name: '基地管理员',
         phone: '13800138001',
         role: 'ACTIVITY_ADMIN'
       },
       {
-        username: 'studenta',
+        username: 's',
         password: '1',
-        name: '学生用户A',
+        name: '学生用户',
         phone: '13800138002',
         role: 'STUDENT',
         school: '测试学校',

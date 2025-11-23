@@ -4,6 +4,7 @@
       <ActivityList
         :activities="filteredActivities"
         :loading="loading"
+        :has-more="hasMore"
         @load-more="loadMore"
         @refresh="refreshResults"
       />
@@ -11,6 +12,11 @@
         v-if="!loading && filteredActivities.length === 0"
         description="未找到相关活动"
       />
+      <div class="load-more-wrapper" v-if="filteredActivities.length">
+        <van-button block type="primary" plain size="small" :loading="loading" :disabled="!hasMore" @click="loadMore">
+          {{ hasMore ? '加载更多' : '没有更多了' }}
+        </van-button>
+      </div>
     </div>
 
     <div class="search-controls">
@@ -116,6 +122,13 @@ const fetchActivities = async (isLoadMore = false) => {
 
   loading.value = true
   try {
+    console.log('搜索请求', {
+      keyword: searchKeyword.value,
+      filter: categoryFilter.value,
+      page: page.value,
+      pageSize,
+      isLoadMore
+    })
     const params = {
       page: page.value,
       limit: pageSize,
@@ -129,6 +142,16 @@ const fetchActivities = async (isLoadMore = false) => {
 
     const response = await axios.get('/api/activities', { params })
     const newActivities = response.data.data || []
+    const totalFromApi = response.data.pagination?.total
+    const total = typeof totalFromApi === 'number' ? totalFromApi : (page.value * pageSize + (newActivities.length === pageSize ? pageSize : 0))
+    console.log('搜索分页', {
+      keyword: searchKeyword.value,
+      filter: categoryFilter.value,
+      page: page.value,
+      pageSize,
+      received: newActivities.length,
+      total
+    })
 
     if (isLoadMore) {
       activities.value = [...activities.value, ...newActivities]
@@ -136,7 +159,9 @@ const fetchActivities = async (isLoadMore = false) => {
       activities.value = newActivities
     }
 
-    hasMore.value = newActivities.length === pageSize
+    const loaded = activities.value.length
+    hasMore.value = (page.value * pageSize) < total || (newActivities.length === pageSize)
+    console.log('搜索 hasMore', { page: page.value, total, loaded, hasMore: hasMore.value })
   } catch (error) {
     console.error('获取搜索结果失败:', error)
     if (!isLoadMore) {
@@ -148,10 +173,10 @@ const fetchActivities = async (isLoadMore = false) => {
 }
 
 const loadMore = () => {
-  if (!loading.value && hasMore.value) {
-    page.value++
-    fetchActivities(true)
-  }
+  if (loading.value) return
+  console.log('搜索加载更多', { nextPage: page.value + 1 })
+  page.value++
+  fetchActivities(true)
 }
 
 const refreshResults = async () => {
@@ -223,10 +248,20 @@ onMounted(async () => {
   margin-top: auto;
 }
 
+.load-more-wrapper {
+  padding: 12px 16px 0;
+}
+
 .search-row {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.page-hint {
+  padding: 6px 0 0;
+  color: #999;
+  font-size: 12px;
 }
 
 .search-row :deep(.van-field) {

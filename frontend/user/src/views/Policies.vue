@@ -1,47 +1,60 @@
 <template>
   <div class="policies-page">
     <!-- 政策列表 -->
-    <van-pull-refresh v-model="refreshing" @refresh="onRefresh">
-      <van-list
-        v-model:loading="loading"
-        :finished="finished"
-        finished-text="没有更多了"
-        @load="onLoad"
+    <div class="policies-list">
+      <div
+        v-for="policy in policies"
+        :key="policy.id"
+        class="policy-item"
       >
-        <div
-          v-for="policy in policies"
-          :key="policy.id"
-          class="policy-item"
-        >
-          <div class="policy-content" @click="goToDetail(policy.id)">
-            <h3 class="policy-title">{{ policy.title }}</h3>
-            <div class="policy-meta">
-              <span class="policy-date">{{ formatDate(policy.createdAt) }}</span>
-              <span v-if="policy.tags" class="policy-tags">{{ policy.tags }}</span>
-            </div>
-          </div>
-          <div class="policy-actions">
-            <van-button
-              class="favorite-button"
-              :class="{ 'favorited': getFavorited(policy.id) }"
-              plain
-              size="small"
-              @click.stop="toggleFavorite(policy.id)"
-            >
-              {{ getFavorited(policy.id) ? '已收藏' : '收藏' }}
-            </van-button>
-            <van-icon name="arrow" class="arrow-icon" @click="goToDetail(policy.id)" />
+        <div class="policy-content" @click="goToDetail(policy.id)">
+          <h3 class="policy-title">{{ policy.title }}</h3>
+          <div class="policy-meta">
+            <span class="policy-date">{{ formatDate(policy.createdAt) }}</span>
+            <span v-if="policy.tags" class="policy-tags">{{ policy.tags }}</span>
           </div>
         </div>
+        <div class="policy-actions">
+          <van-button
+            class="favorite-button"
+            :class="{ 'favorited': getFavorited(policy.id) }"
+            plain
+            size="small"
+            @click.stop="toggleFavorite(policy.id)"
+          >
+            {{ getFavorited(policy.id) ? '已收藏' : '收藏' }}
+          </van-button>
+          <van-icon name="arrow" class="arrow-icon" @click="goToDetail(policy.id)" />
+        </div>
+      </div>
 
-        <!-- 空状态 -->
-        <van-empty
-          v-if="!loading && policies.length === 0"
-          description="暂无政策通知"
-          image="search"
+      <!-- 空状态 -->
+      <van-empty
+        v-if="!loading && policies.length === 0"
+        description="暂无政策通知"
+        image="search"
+      />
+    </div>
+
+    <!-- 分页 -->
+    <div v-if="totalPages > 1" class="policies-pagination">
+      <van-button size="small" :disabled="pagination.page <= 1" @click="handleGoToFirst">首页</van-button>
+      <van-button size="small" :disabled="pagination.page <= 1" @click="handlePrevPage">上一页</van-button>
+      <span class="page-info">第 {{ pagination.page }} / {{ totalPages }} 页</span>
+      <van-button size="small" :disabled="pagination.page >= totalPages" @click="handleNextPage">下一页</van-button>
+      <van-button size="small" :disabled="pagination.page >= totalPages" @click="handleGoToLast">末页</van-button>
+      <div class="jump-section">
+        <van-field
+          v-model="jumpPageInput"
+          type="digit"
+          placeholder="页码"
+          class="jump-input"
+          maxlength="4"
+          @keyup.enter="handleJumpPage"
         />
-      </van-list>
-    </van-pull-refresh>
+        <van-button size="small" type="primary" @click="handleJumpPage">跳转</van-button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -56,9 +69,8 @@ const router = useRouter()
 
 const policies = ref([])
 const loading = ref(false)
-const finished = ref(false)
-const refreshing = ref(false)
 const favoriteMap = ref({}) // 存储收藏状态和ID的映射
+const jumpPageInput = ref('')
 
 const pagination = reactive({
   page: 1,
@@ -75,14 +87,8 @@ const getFavorited = (policyId) => {
   return favoriteMap.value[`policy_${policyId}`]?.isFavorited || false
 }
 
-const fetchPolicies = async (reset = false) => {
+const fetchPolicies = async () => {
   try {
-    if (reset) {
-      pagination.page = 1
-      policies.value = []
-      finished.value = false
-    }
-
     loading.value = true
 
     const params = {
@@ -93,29 +99,60 @@ const fetchPolicies = async (reset = false) => {
 
     const response = await axios.get('/api/policies', { params })
 
-    if (reset) {
-      policies.value = response.data.data
-    } else {
-      policies.value.push(...response.data.data)
-    }
-
+    policies.value = response.data.data
     pagination.total = response.data.pagination.total
 
-    // 检查是否还有更多数据
-    if (policies.value.length >= pagination.total) {
-      finished.value = true
-    }
-
-    pagination.page++
+    // 滚动到顶部
+    window.scrollTo({ top: 0, behavior: 'smooth' })
 
     // 加载后检查收藏状态
     await loadFavoriteStatus()
   } catch (error) {
     console.error('获取政策列表失败:', error)
+    policies.value = []
+    pagination.total = 0
   } finally {
     loading.value = false
-    refreshing.value = false
   }
+}
+
+const totalPages = computed(() => Math.max(1, Math.ceil((pagination.total || 0) / pagination.limit)))
+
+const handlePrevPage = () => {
+  if (pagination.page <= 1) return
+  pagination.page -= 1
+  fetchPolicies()
+}
+
+const handleNextPage = () => {
+  if (pagination.page >= totalPages.value) return
+  pagination.page += 1
+  fetchPolicies()
+}
+
+const handleGoToFirst = () => {
+  if (pagination.page === 1) return
+  pagination.page = 1
+  fetchPolicies()
+}
+
+const handleGoToLast = () => {
+  if (pagination.page === totalPages.value) return
+  pagination.page = totalPages.value
+  fetchPolicies()
+}
+
+const handleJumpPage = () => {
+  const target = parseInt(jumpPageInput.value, 10)
+  if (Number.isNaN(target)) {
+    showToast('请输入正确的页码')
+    return
+  }
+  const normalized = Math.min(Math.max(1, target), totalPages.value)
+  if (normalized === pagination.page) return
+  pagination.page = normalized
+  fetchPolicies()
+  jumpPageInput.value = ''
 }
 
 // 加载所有政策的收藏状态
@@ -173,21 +210,14 @@ const toggleFavorite = async (policyId) => {
   }
 }
 
-const onLoad = () => {
-  fetchPolicies()
-}
 
-const onRefresh = () => {
-  refreshing.value = true
-  fetchPolicies(true)
-}
 
 const goToDetail = (policyId) => {
   router.push(`/policy/${policyId}`)
 }
 
 onMounted(() => {
-  fetchPolicies(true)
+  fetchPolicies()
 })
 </script>
 
@@ -285,5 +315,32 @@ onMounted(() => {
   color: #c8c9cc;
   font-size: 16px;
   cursor: pointer;
+}
+
+.policies-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background-color: #fff;
+  margin-top: 16px;
+}
+
+.policies-pagination .page-info {
+  font-size: 14px;
+  color: #666;
+}
+
+.jump-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.jump-input {
+  width: 80px;
+  padding: 0 8px;
 }
 </style>

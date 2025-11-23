@@ -232,9 +232,12 @@ const finalAmount = computed(() => {
   return totalAmount.value
 })
 
+const orderId = ref(null)
+
 // 初始化商品信息
 const initProductInfo = () => {
-  const { type, id, name, price, image } = route.query
+  const { type, id, name, price, image, orderId: oid } = route.query
+  orderId.value = oid
 
   productInfo.value = {
     id: id || '',
@@ -334,12 +337,25 @@ const handlePayment = async () => {
       ? couponInfo.value.couponCode
       : null
 
+    // 验证订单ID
+    let oidToSend = undefined
+    if (orderId.value) {
+      const parsedId = parseInt(orderId.value)
+      if (isNaN(parsedId)) {
+        showToast('订单ID无效')
+        paying.value = false
+        return
+      }
+      oidToSend = parsedId
+    }
+
     let orderData = {
       amount: payAmount,
       note: orderNote.value,
       paymentMethod: paymentMethod.value,
       couponCode: isActivityProduct.value ? appliedCouponCode : null,
-      couponDiscount: couponApplied.value ? couponDiscount.value : null
+      couponDiscount: couponApplied.value ? couponDiscount.value : null,
+      orderId: oidToSend
     }
 
     let response

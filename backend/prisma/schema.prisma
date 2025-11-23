@@ -26,7 +26,7 @@ model User {
   Achievement         Achievement[]
   Activity            Activity[]
   BalanceTransaction  BalanceTransaction[]
-  Base                Base[]               @relation("CreatedBases")
+  createdBases        Base[]               @relation("CreatedBases")
   BaseCoupon          BaseCoupon[]
   Carousel            Carousel[]
   Certificate         Certificate[]
@@ -39,7 +39,6 @@ model User {
   UserActivity        UserActivity[]
   UserHistory_User    UserHistory[]        @relation("UserHistory_userIdToUser")
   UserHistory_changed UserHistory[]        @relation("UserHistory_changedByToUser")
-  Base_managerId      Base[]               @relation("Base_managerIdToUser")
   adminOfBases        Base[]               @relation("BaseAdmins")
 
   @@map("users")
@@ -58,15 +57,12 @@ model Base {
   createdAt    DateTime   @default(now()) @db.Timestamp(0)
   updatedAt    DateTime   @updatedAt @db.Timestamp(0)
   createdBy    Int?
-  managerId    Int?
-  Activity     Activity[]
-  BaseCoupon   BaseCoupon[]
-  User_manager User?      @relation("Base_managerIdToUser", fields: [managerId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "bases_ibfk_2")
+  activities   Activity[] @relation("ActivityToBase")
+  baseCoupons  BaseCoupon[] @relation("BaseCouponToBase")
   User_creator User?      @relation("CreatedBases", fields: [createdBy], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "bases_ibfk_1")
   admins       User[]     @relation("BaseAdmins")
 
   @@index([createdBy], map: "bases_ibfk_1")
-  @@index([managerId], map: "bases_ibfk_2")
   @@map("bases")
 }
 
@@ -174,7 +170,7 @@ model Activity {
   baseId      Int
   createdBy   Int?
 
-  base     Base           @relation(fields: [baseId], references: [id], onDelete: Cascade)
+  base     Base           @relation("ActivityToBase", fields: [baseId], references: [id], onDelete: Cascade)
   users    UserActivity[]
   orders   Order[]
   creator  User?          @relation(fields: [createdBy], references: [id])
@@ -395,7 +391,7 @@ model BaseCoupon {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  base Base  @relation(fields: [baseId], references: [id], onDelete: Cascade)
+  base Base  @relation("BaseCouponToBase", fields: [baseId], references: [id], onDelete: Cascade)
   user User? @relation(fields: [usedBy], references: [id])
   orders Order[]
 

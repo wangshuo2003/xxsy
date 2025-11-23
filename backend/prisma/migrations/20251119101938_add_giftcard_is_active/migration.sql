@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE `gift_cards` ADD COLUMN `isActive` BOOLEAN NOT NULL DEFAULT true;

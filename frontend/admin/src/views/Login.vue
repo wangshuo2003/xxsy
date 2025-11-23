@@ -41,9 +41,9 @@
 
       <div class="demo-accounts">
         <p>演示账号：</p>
-        <p>超级管理员：admin / admin123</p>
-        <p>基地管理员：baseadmin / baseadmin</p>
-        <p>学生用户：student / student123</p>
+        <p>超级管理员：a / 1</p>
+        <p>基地管理员：b / 1</p>
+        <p>学生用户：s / 1</p>
       </div>
     </div>
   </div>
@@ -96,6 +96,29 @@ const handleLogin = async () => {
 </script>
 
 <style scoped>
+.login-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background-color: #f0f2f5; /* Added background color */
+}
+
+.login-form {
+  width: 400px;
+  padding: 40px;
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.login-title {
+  text-align: center;
+  margin-bottom: 30px;
+  color: #333;
+  font-size: 24px;
+}
+
 .demo-accounts {
   margin-top: 20px;
   padding: 15px;

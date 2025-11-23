@@ -8,23 +8,26 @@ const router = express.Router()
 // 获取活动列表
 router.get('/', async (req, res) => {
   try {
-    const { page = 1, limit = 10, isApproved, baseId, search, type } = req.query
-    const where = {}
-    if (isApproved !== undefined) where.isApproved = isApproved === 'true'
-    if (baseId) where.baseId = parseInt(baseId)
-    if (type) where.type = type
+    const { isApproved, baseId, search, type } = req.query;
+    const page = parseInt(req.query.page || '1', 10);
+    const limit = parseInt(req.query.limit || '10', 10);
+
+    const where = {};
+    if (isApproved !== undefined) where.isApproved = isApproved === 'true';
+    if (baseId) where.baseId = parseInt(baseId);
+    if (type) where.type = type;
     if (search) {
       where.OR = [
         { name: { contains: search } },
         { type: { contains: search } }
-      ]
+      ];
     }
 
     const activities = await prisma.activity.findMany({
       where,
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * limit,
-      take: parseInt(limit),
+      take: limit,
       include: {
         base: { select: { name: true } },
         _count: {
@@ -49,8 +52,10 @@ router.get('/', async (req, res) => {
 // 获取我的活动（管理员） - 必须放在 /:id 路由之前
 router.get('/my-activities', authMiddleware, roleMiddleware(['ACTIVITY_ADMIN']), async (req, res) => {
   try {
-    const { page = 1, limit = 10, search } = req.query
-    const where = {}
+    const { search } = req.query;
+    const page = parseInt(req.query.page || '1', 10);
+    const limit = parseInt(req.query.limit || '10', 10);
+    const where = {};
 
     // 管理员可以看到所有已通过的活动
     // 因为他们可以为任何基地创建活动
@@ -65,7 +70,7 @@ router.get('/my-activities', authMiddleware, roleMiddleware(['ACTIVITY_ADMIN']),
       where,
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * limit,
-      take: parseInt(limit),
+      take: limit,
       include: {
         base: { select: { name: true } }
       }
@@ -85,8 +90,10 @@ router.get('/my-activities', authMiddleware, roleMiddleware(['ACTIVITY_ADMIN']),
 // 获取用户报名的活动 - 必须放在 /:id 路由之前
 router.get('/my-registrations', authMiddleware, async (req, res) => {
   try {
-    const { page = 1, limit = 10, status } = req.query
-    const where = { userId: req.user.id }
+    const { status } = req.query;
+    const page = parseInt(req.query.page || '1', 10);
+    const limit = parseInt(req.query.limit || '10', 10);
+    const where = { userId: req.user.id };
 
     if (status) {
       where.status = status
@@ -96,7 +103,7 @@ router.get('/my-registrations', authMiddleware, async (req, res) => {
       where,
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * limit,
-      take: parseInt(limit),
+      take: limit,
       include: {
         activity: {
           include: {
@@ -161,21 +168,23 @@ router.get('/my-registrations', authMiddleware, async (req, res) => {
 // 获取用户提交的活动（非管理员创建的活动） - 必须放在 /:id 路由之前
 router.get('/user-submitted', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMIN']), async (req, res) => {
   try {
-    const { page = 1, limit = 10, search, status } = req.query
-    const skip = (page - 1) * limit
+    const { search, status } = req.query;
+    const page = parseInt(req.query.page || '1', 10);
+    const limit = parseInt(req.query.limit || '10', 10);
+    const skip = (page - 1) * limit;
 
     // 构建查询条件 - 获取用户提交的活动（排除管理员创建的活动）
-    const where = {}
+    const where = {};
 
     // 状态过滤
     if (status) {
       if (status === 'pending') {
-        where.isApproved = false
-        where.rejectReason = null
+        where.isApproved = false;
+        where.rejectReason = null;
       } else if (status === 'approved') {
-        where.isApproved = true
+        where.isApproved = true;
       } else if (status === 'rejected') {
-        where.rejectReason = { not: null }
+        where.rejectReason = { not: null };
       }
     }
 
@@ -186,14 +195,14 @@ router.get('/user-submitted', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'AC
         { type: { contains: search } },
         { location: { contains: search } },
         { creator: { name: { contains: search } } }
-      ]
+      ];
     }
 
     const [activities, total] = await Promise.all([
       prisma.activity.findMany({
         where,
         skip,
-        take: parseInt(limit),
+        take: limit,
         include: {
           base: { select: { name: true } },
           creator: { select: { name: true, phone: true } }

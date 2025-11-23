@@ -87,7 +87,7 @@ router.get('/', authMiddleware, async (req, res) => {
 
     const orders = await prisma.order.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: req.query.sortBy === 'updatedAt' ? { updatedAt: 'desc' } : { createdAt: 'desc' },
       skip: (page - 1) * limit,
       take: parseInt(limit),
       include: {
@@ -142,7 +142,7 @@ router.post('/', authMiddleware, [
     const errors = validationResult(req)
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() })
 
-    const { serviceId, note } = req.body
+    const { serviceId, note, orderId } = req.body
     const userNote = typeof note === 'string' && note.trim() ? note.trim() : null
 
     const service = await prisma.service.findUnique({
@@ -152,13 +152,44 @@ router.post('/', authMiddleware, [
     if (!service) return res.status(404).json({ error: '服务项目不存在' })
     if (!service.isActive) return res.status(400).json({ error: '服务项目已下架' })
 
-    const existingOrder = await prisma.order.findFirst({
-      where: {
-        userId: req.user.id,
-        serviceId: parseInt(serviceId),
-        status: { in: ['PENDING', 'PAID'] }
+    let existingOrder = null
+    if (orderId) {
+      existingOrder = await prisma.order.findUnique({
+        where: { id: parseInt(orderId) }
+      })
+
+      if (!existingOrder) return res.status(404).json({ error: '订单不存在' })
+      if (existingOrder.userId !== req.user.id) return res.status(403).json({ error: '无权操作该订单' })
+      if (existingOrder.serviceId !== parseInt(serviceId)) return res.status(400).json({ error: '订单信息不匹配' })
+
+      if (!['PENDING', 'PAID'].includes(existingOrder.status)) {
+        return res.status(400).json({ error: '订单状态已变更，无法继续操作' })
       }
-    })
+    } else {
+      const pendingOrder = await prisma.order.findFirst({
+        where: {
+          userId: req.user.id,
+          serviceId: parseInt(serviceId),
+          status: 'PENDING'
+        }
+      })
+
+      if (pendingOrder) {
+        return res.status(400).json({ error: '存在待支付订单，请前往订单列表进行支付' })
+      }
+
+      const paidOrder = await prisma.order.findFirst({
+        where: {
+          userId: req.user.id,
+          serviceId: parseInt(serviceId),
+          status: 'PAID'
+        }
+      })
+
+      if (paidOrder) {
+        existingOrder = paidOrder
+      }
+    }
 
     if (existingOrder) return res.status(400).json({ error: '您已报名该服务项目' })
 
@@ -195,7 +226,7 @@ router.post('/activity', authMiddleware, [
     const errors = validationResult(req)
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() })
 
-    const { activityId, amount, couponCode, note } = req.body
+    const { activityId, amount, couponCode, note, orderId } = req.body
     const userNote = typeof note === 'string' && note.trim() ? note.trim() : null
 
     const activity = await prisma.activity.findUnique({
@@ -237,16 +268,56 @@ router.post('/activity', authMiddleware, [
       })
     }
 
-    const existingOrder = await prisma.order.findFirst({
-      where: {
-        userId: req.user.id,
-        activityId: parseInt(activityId),
-        status: { in: ['PENDING', 'PAID'] }
-      },
-      include: {
-        activity: { select: { id: true, name: true, type: true, baseId: true } }
+    let existingOrder = null
+    if (orderId) {
+      existingOrder = await prisma.order.findUnique({
+        where: { id: parseInt(orderId) },
+        include: {
+          activity: { select: { id: true, name: true, type: true, baseId: true } }
+        }
+      })
+
+      if (!existingOrder) return res.status(404).json({ error: '订单不存在' })
+      if (existingOrder.userId !== req.user.id) return res.status(403).json({ error: '无权操作该订单' })
+      if (existingOrder.activityId !== parseInt(activityId)) return res.status(400).json({ error: '订单信息不匹配' })
+
+      // 如果指定了订单ID，但状态不是待支付或已支付（例如已取消），则不允许操作
+      if (!['PENDING', 'PAID'].includes(existingOrder.status)) {
+        return res.status(400).json({ error: '订单状态已变更，无法继续操作' })
       }
-    })
+    } else {
+      // 如果未指定订单ID，检查是否存在待支付订单
+      // 如果存在待支付订单，必须要求前端传递明确的订单ID，防止误操作
+      const pendingOrder = await prisma.order.findFirst({
+        where: {
+          userId: req.user.id,
+          activityId: parseInt(activityId),
+          status: 'PENDING'
+        }
+      })
+
+      if (pendingOrder) {
+        return res.status(400).json({ error: '存在待支付订单，请前往订单列表进行支付' })
+      }
+
+      // 只有在没有待支付订单的情况下，才允许不传ID（视为创建新订单）
+      // 但前面已经检查了 existingRegistration，所以这里通常不会走到创建新订单的逻辑，除非是重复支付已支付订单？
+      // 检查已支付订单
+      const paidOrder = await prisma.order.findFirst({
+        where: {
+          userId: req.user.id,
+          activityId: parseInt(activityId),
+          status: 'PAID'
+        },
+        include: {
+          activity: { select: { id: true, name: true, type: true, baseId: true } }
+        }
+      })
+
+      if (paidOrder) {
+        existingOrder = paidOrder
+      }
+    }
 
     const finalAmount = Math.max(basePrice - discountAmount, 0)
 
@@ -615,6 +686,16 @@ router.post('/:id/auto-refund', authMiddleware, async (req, res) => {
           processedAt: new Date()
         }
       })
+
+      // 如果是活动订单，删除报名记录以便用户重新报名
+      if (order.activityId) {
+        await tx.userActivity.deleteMany({
+          where: {
+            userId: req.user.id,
+            activityId: order.activityId
+          }
+        })
+      }
 
       return { updatedOrder, refund, balance: balanceResult.balance }
     })

@@ -78,8 +78,7 @@
         <div class="gift-card-input-group">
           <van-field
             v-model="quickGiftCardCode"
-            placeholder="请输入12位礼品卡码"
-            maxlength="12"
+            placeholder="请输入礼品卡码"
             class="gift-card-input"
             :rules="[{ required: true, message: '请输入礼品卡码' }]"
           >
@@ -89,7 +88,7 @@
                 type="primary"
                 @click="handleQuickGiftCardRecharge"
                 :loading="quickRecharging"
-                :disabled="!quickGiftCardCode || quickGiftCardCode.length < 12"
+                :disabled="!quickGiftCardCode"
               >
                 充值
               </van-button>
@@ -97,7 +96,7 @@
           </van-field>
         </div>
         <div class="gift-card-tip">
-          支持12位礼品卡码充值，余额实时到账
+          支持礼品卡码充值，余额实时到账
         </div>
       </div>
     </div>
@@ -182,8 +181,7 @@
             v-if="paymentMethod === 'gift_card'"
             v-model="giftCardCode"
             label="礼品卡码"
-            placeholder="请输入12位礼品卡码"
-            maxlength="12"
+            placeholder="请输入礼品卡码"
             :rules="[{ required: true, message: '请输入礼品卡码' }]"
           />
         </div>
@@ -384,11 +382,6 @@ const handleGiftCardRecharge = async () => {
 const handleQuickGiftCardRecharge = async () => {
   if (!quickGiftCardCode.value || !quickGiftCardCode.value.trim()) {
     showToast('请输入礼品卡码')
-    return
-  }
-
-  if (quickGiftCardCode.value.length < 12) {
-    showToast('请输入完整的12位礼品卡码')
     return
   }
 

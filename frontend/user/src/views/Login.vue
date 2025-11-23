@@ -34,7 +34,7 @@
       <div class="demo-accounts">
         <van-collapse v-model="activeNames">
           <van-collapse-item title="演示账号" name="1">
-            <p>学生用户：studenta / 1</p>
+            <p>学生用户：s / 1</p>
           </van-collapse-item>
         </van-collapse>
       </div>

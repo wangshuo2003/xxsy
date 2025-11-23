@@ -4,7 +4,7 @@
     <van-list
       :loading="props.loading"
       :finished="finished"
-      finished-text="没有更多了"
+      :finished-text="props.infinite ? '没有更多了' : ''"
       @load="$emit('load-more')"
     >
       <van-card
@@ -140,6 +140,14 @@ const props = defineProps({
   loading: {
     type: Boolean,
     default: false
+  },
+  hasMore: {
+    type: Boolean,
+    default: true
+  },
+  infinite: {
+    type: Boolean,
+    default: true
   }
 })
 
@@ -147,7 +155,8 @@ const emit = defineEmits(['load-more', 'refresh'])
 
 const registering = ref({})
 const favoriteMap = ref({}) // 存储收藏状态和ID的映射
-const finished = computed(() => !props.loading && props.activities.length > 0)
+// 如果禁用了无限滚动，则直接视为 finished，交由外部按钮控制
+const finished = computed(() => !props.infinite || !props.hasMore)
 const userOrders = ref([]) // 用户的订单列表
 
 const findOrderForActivity = (activityId) => {

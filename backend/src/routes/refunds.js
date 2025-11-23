@@ -121,9 +121,8 @@ router.put(
         return res.json({ message: '已拒绝该退款申请' })
       }
 
-      const description = `活动退款：${
-        refund.order.activity?.name || refund.order.service?.title || '订单'
-      }`
+      const description = `活动退款：${refund.order.activity?.name || refund.order.service?.title || '订单'
+        }`
 
       const balanceResult = await refundToBalance(
         order.userId,
@@ -150,6 +149,16 @@ router.put(
           status: 'REFUNDED'
         }
       })
+
+      // 如果是活动订单，删除报名记录以便用户重新报名
+      if (order.activityId) {
+        await prisma.userActivity.deleteMany({
+          where: {
+            userId: order.userId,
+            activityId: order.activityId
+          }
+        })
+      }
 
       res.json({
         message: '退款已同意并完成退款操作',

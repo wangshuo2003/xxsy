@@ -16,7 +16,7 @@
       </div>
 
       <el-table :data="refunds" v-loading="loading" border>
-        <el-table-column label="订单信息" min-width="240">
+        <el-table-column label="订单信息" min-width="120" show-overflow-tooltip>
           <template #default="scope">
             <div class="order-info">
               <div class="order-title">{{ scope.row.order?.orderNo }}</div>
@@ -26,7 +26,7 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="用户" min-width="160">
+        <el-table-column label="用户" min-width="90" show-overflow-tooltip>
           <template #default="scope">
             <div class="user-info">
               <div>{{ scope.row.order?.user?.name || '用户' }}</div>
@@ -34,25 +34,25 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="amount" label="金额" width="120">
+        <el-table-column prop="amount" label="金额" width="90">
           <template #default="scope">
             ¥{{ scope.row.amount.toFixed(2) }}
           </template>
         </el-table-column>
-        <el-table-column prop="reason" label="退款原因" min-width="180" />
-        <el-table-column label="状态" width="140">
+        <el-table-column prop="reason" label="退款原因" min-width="100" show-overflow-tooltip />
+        <el-table-column label="状态" width="90">
           <template #default="scope">
             <el-tag :type="statusTagType(scope.row.status)">
               {{ formatStatus(scope.row.status) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="createdAt" label="申请时间" width="180">
+        <el-table-column prop="createdAt" label="申请时间" width="150">
           <template #default="scope">
             {{ formatDate(scope.row.createdAt) }}
           </template>
         </el-table-column>
-        <el-table-column label="处理信息" min-width="200">
+        <el-table-column label="处理信息" min-width="120" show-overflow-tooltip>
           <template #default="scope">
             <div v-if="scope.row.status !== 'PENDING'">
               <div>{{ scope.row.decisionNote || '无备注' }}</div>
@@ -64,7 +64,7 @@
             <span v-else>--</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right">
+        <el-table-column label="操作" width="150">
           <template #default="scope">
             <el-button
               type="success"

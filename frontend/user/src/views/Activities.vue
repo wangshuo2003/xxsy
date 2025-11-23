@@ -4,24 +4,94 @@
       <!-- 活动类型标签 -->
       <van-tabs v-model:active="activeTab" @change="onTabChange" sticky>
         <van-tab title="赛事" name="赛事">
-          <ActivityList :activities="filteredActivities" :loading="loading" @load-more="loadMore" @refresh="refreshActivities" />
+          <ActivityList :activities="filteredActivities" :loading="loading" :has-more="false" :infinite="false" @refresh="refreshActivities" />
+          <div v-if="totalPages > 1" class="activities-pagination">
+            <van-button size="small" :disabled="page <= 1" @click="handleGoToFirst">首页</van-button>
+            <van-button size="small" :disabled="page <= 1" @click="handlePrevPage">上一页</van-button>
+            <span class="page-info">第 {{ page }} / {{ totalPages }} 页</span>
+            <van-button size="small" :disabled="page >= totalPages" @click="handleNextPage">下一页</van-button>
+            <van-button size="small" :disabled="page >= totalPages" @click="handleGoToLast">末页</van-button>
+            <div class="jump-section">
+              <van-field
+                v-model="jumpPageInput"
+                type="digit"
+                placeholder="页码"
+                class="jump-input"
+                maxlength="4"
+                @keyup.enter="handleJumpPage"
+              />
+              <van-button size="small" type="primary" @click="handleJumpPage">跳转</van-button>
+            </div>
+          </div>
         </van-tab>
         <van-tab title="研学" name="研学">
-          <ActivityList :activities="filteredActivities" :loading="loading" @load-more="loadMore" @refresh="refreshActivities" />
+          <ActivityList :activities="filteredActivities" :loading="loading" :has-more="false" :infinite="false" @refresh="refreshActivities" />
+          <div v-if="totalPages > 1" class="activities-pagination">
+            <van-button size="small" :disabled="page <= 1" @click="handleGoToFirst">首页</van-button>
+            <van-button size="small" :disabled="page <= 1" @click="handlePrevPage">上一页</van-button>
+            <span class="page-info">第 {{ page }} / {{ totalPages }} 页</span>
+            <van-button size="small" :disabled="page >= totalPages" @click="handleNextPage">下一页</van-button>
+            <van-button size="small" :disabled="page >= totalPages" @click="handleGoToLast">末页</van-button>
+            <div class="jump-section">
+              <van-field
+                v-model="jumpPageInput"
+                type="digit"
+                placeholder="页码"
+                class="jump-input"
+                maxlength="4"
+                @keyup.enter="handleJumpPage"
+              />
+              <van-button size="small" type="primary" @click="handleJumpPage">跳转</van-button>
+            </div>
+          </div>
         </van-tab>
         <van-tab title="实践" name="实践">
-          <ActivityList :activities="filteredActivities" :loading="loading" @load-more="loadMore" @refresh="refreshActivities" />
+          <ActivityList :activities="filteredActivities" :loading="loading" :has-more="false" :infinite="false" @refresh="refreshActivities" />
+          <div v-if="totalPages > 1" class="activities-pagination">
+            <van-button size="small" :disabled="page <= 1" @click="handleGoToFirst">首页</van-button>
+            <van-button size="small" :disabled="page <= 1" @click="handlePrevPage">上一页</van-button>
+            <span class="page-info">第 {{ page }} / {{ totalPages }} 页</span>
+            <van-button size="small" :disabled="page >= totalPages" @click="handleNextPage">下一页</van-button>
+            <van-button size="small" :disabled="page >= totalPages" @click="handleGoToLast">末页</van-button>
+            <div class="jump-section">
+              <van-field
+                v-model="jumpPageInput"
+                type="digit"
+                placeholder="页码"
+                class="jump-input"
+                maxlength="4"
+                @keyup.enter="handleJumpPage"
+              />
+              <van-button size="small" type="primary" @click="handleJumpPage">跳转</van-button>
+            </div>
+          </div>
         </van-tab>
         <van-tab title="公益" name="公益">
-          <ActivityList :activities="filteredActivities" :loading="loading" @load-more="loadMore" @refresh="refreshActivities" />
+          <ActivityList :activities="filteredActivities" :loading="loading" :has-more="false" :infinite="false" @refresh="refreshActivities" />
+          <div v-if="totalPages > 1" class="activities-pagination">
+            <van-button size="small" :disabled="page <= 1" @click="handleGoToFirst">首页</van-button>
+            <van-button size="small" :disabled="page <= 1" @click="handlePrevPage">上一页</van-button>
+            <span class="page-info">第 {{ page }} / {{ totalPages }} 页</span>
+            <van-button size="small" :disabled="page >= totalPages" @click="handleNextPage">下一页</van-button>
+            <van-button size="small" :disabled="page >= totalPages" @click="handleGoToLast">末页</van-button>
+            <div class="jump-section">
+              <van-field
+                v-model="jumpPageInput"
+                type="digit"
+                placeholder="页码"
+                class="jump-input"
+                maxlength="4"
+                @keyup.enter="handleJumpPage"
+              />
+              <van-button size="small" type="primary" @click="handleJumpPage">跳转</van-button>
+            </div>
+          </div>
         </van-tab>
       </van-tabs>
     </div>
 
-    <div class="activities-search-bottom">
-      <div class="search-row">
-        <van-button type="primary" class="search-button" @click="handleSearch">搜索</van-button>
-      </div>
+    <div class="search-floating-btn">
+      <van-button round type="primary" icon="search" @click="handleSearch">搜索</van-button>
     </div>
   </div>
 </template>
@@ -32,6 +102,7 @@ import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
 import { useUserStore } from '@/stores/user'
 import ActivityList from '../components/ActivityList.vue'
+import { showToast } from 'vant'
 
 const userStore = useUserStore()
 const route = useRoute()
@@ -42,7 +113,9 @@ const userRegistrations = ref([]) // 用户报名的活动ID列表
 const loading = ref(false)
 const page = ref(1)
 const pageSize = 10
-const hasMore = ref(true)
+const totalActivities = ref(0)
+const jumpPageInput = ref('')
+const hasMore = ref(false) // Keep for compatibility but not used for logic
 const searchKeyword = ref('')
 const categoryFilter = ref('all')
 const appliedCategoryFilter = ref(null)
@@ -58,6 +131,8 @@ const filterActions = filterOptions.map(opt => ({ text: opt.text, value: opt.val
 const currentFilterLabel = computed(() => {
   return filterOptions.find(opt => opt.value === categoryFilter.value)?.text || '全部活动'
 })
+// 始终展示加载按钮（有数据时），便于手动翻页；用 hasMore 控制禁用/文案
+const showLoadMore = computed(() => filteredActivities.value.length > 0)
 
 // 合并活动列表和报名状态
 const filteredActivities = computed(() => {
@@ -124,12 +199,47 @@ const onTabChange = (name) => {
   fetchActivities()
 }
 
-// 加载更多数据
-const loadMore = () => {
-  if (!loading.value && hasMore.value) {
-    page.value++
-    fetchActivities(true)
+const totalPages = computed(() => Math.max(1, Math.ceil((totalActivities.value || 0) / pageSize)))
+
+const handlePrevPage = () => {
+  if (page.value <= 1) return
+  page.value -= 1
+  fetchActivities()
+}
+
+const handleNextPage = () => {
+  if (page.value >= totalPages.value) return
+  page.value += 1
+  fetchActivities()
+}
+
+const handleGoToFirst = () => {
+  if (page.value === 1) return
+  page.value = 1
+  fetchActivities()
+}
+
+const handleGoToLast = () => {
+  if (page.value === totalPages.value) return
+  page.value = totalPages.value
+  fetchActivities()
+}
+
+const handleJumpPage = () => {
+  const target = parseInt(jumpPageInput.value, 10)
+  if (Number.isNaN(target)) {
+    showToast('请输入正确的页码')
+    return
   }
+  const normalized = Math.min(Math.max(1, target), totalPages.value)
+  if (normalized === page.value) return
+  page.value = normalized
+  fetchActivities()
+  jumpPageInput.value = ''
+}
+
+const loadMore = () => {
+  // Deprecated
 }
 
 const handleSearch = () => {
@@ -143,11 +253,18 @@ const handleSearch = () => {
 }
 
 // 获取活动数据
-const fetchActivities = async (isLoadMore = false) => {
+const fetchActivities = async () => {
   if (loading.value) return
 
   loading.value = true
   try {
+    console.log('请求活动列表', {
+      tab: activeTab.value,
+      page: page.value,
+      pageSize,
+      appliedCategory: appliedCategoryFilter.value,
+      activeTab: activeTab.value
+    })
     const params = {
       page: page.value,
       limit: pageSize,
@@ -166,22 +283,18 @@ const fetchActivities = async (isLoadMore = false) => {
     const response = await axios.get('/api/activities', { params })
 
     const newActivities = response.data.data || []
+    const pagination = response.data.pagination || {}
+    
+    activities.value = newActivities
+    totalActivities.value = pagination.total || newActivities.length
 
-    if (isLoadMore) {
-      activities.value = [...activities.value, ...newActivities]
-    } else {
-      activities.value = newActivities
-    }
+    // 滚动到顶部
+    window.scrollTo({ top: 0, behavior: 'smooth' })
 
-    // 检查是否还有更多数据
-    if (newActivities.length < pageSize) {
-      hasMore.value = false
-    }
   } catch (error) {
     console.error('获取活动列表失败:', error)
-    if (!isLoadMore) {
-      activities.value = []
-    }
+    activities.value = []
+    totalActivities.value = 0
   } finally {
     loading.value = false
   }
@@ -193,6 +306,7 @@ onMounted(async () => {
   if (urlTab && ['赛事', '研学', '实践', '公益'].includes(urlTab)) {
     activeTab.value = urlTab
   }
+  console.log('页面初始化', { tab: activeTab.value })
   // 如果URL中没有指定标签页，使用默认的"赛事活动"
 
   await Promise.all([
@@ -217,27 +331,30 @@ const onSelectFilter = (action) => {
 .activities-content {
   flex: 1;
 }
-
-.activities-search-bottom {
-  display: flex;
-  flex-direction: column;
-  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
-  background-color: transparent;
-  border-top: none;
-  position: sticky;
-  bottom: calc(50px + env(safe-area-inset-bottom));
-  z-index: 5;
-  margin-top: auto;
+.load-more-btn {
+  flex: 1;
+  margin-right: 8px;
+}
+.load-more-wrapper {
+  padding: 12px 16px 0;
 }
 
-.search-row {
-  display: flex;
-  justify-content: flex-end;
+.search-floating-btn {
+  position: fixed;
+  right: 16px;
+  bottom: calc(60px + env(safe-area-inset-bottom));
+  z-index: 99;
 }
 
-.search-button {
-  min-width: 120px;
+.search-floating-btn .van-button {
+  box-shadow: 0 2px 12px rgba(25, 137, 250, 0.4);
+  padding: 0 20px;
+  height: 44px;
 }
+
+
+
+
 
 :deep(.van-tabs__nav) {
   background-color: white;
@@ -254,5 +371,31 @@ const onSelectFilter = (action) => {
 
 :deep(.van-tabs__line) {
   background-color: #1989fa;
+}
+
+.activities-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background-color: #fff;
+}
+
+.activities-pagination .page-info {
+  font-size: 14px;
+  color: #666;
+}
+
+.jump-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.jump-input {
+  width: 80px;
+  padding: 0 8px;
 }
 </style>

@@ -103,12 +103,13 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted, computed, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { showToast, showSuccessToast, showConfirmDialog } from 'vant'
 import request from '@/api/request'
 
 const router = useRouter()
+const route = useRoute()
 
 const loading = ref(true)
 const orders = ref([])
@@ -131,8 +132,24 @@ const setFilterStatus = (status) => {
   if (filterStatus.value === status) return
   filterStatus.value = status
   currentPage.value = 1
+  
+  // 更新URL查询参数
+  router.replace({
+    path: '/orders',
+    query: { ...route.query, tab: status }
+  })
+  
   fetchOrders()
 }
+
+// 监听路由参数变化
+watch(() => route.query.tab, (newTab) => {
+  if (newTab && newTab !== filterStatus.value) {
+    filterStatus.value = newTab
+    currentPage.value = 1
+    fetchOrders()
+  }
+})
 
 // 获取订单列表
 const fetchOrders = async () => {
@@ -144,6 +161,9 @@ const fetchOrders = async () => {
     }
     if (filterStatus.value !== 'all') {
       params.status = filterStatus.value
+    } else {
+      // 在【全部】页面，按修改时间倒序排列（满足：付款后订单时间被修改，排在前面）
+      params.sortBy = 'updatedAt'
     }
 
     const response = await request.get('/orders', { params })
@@ -157,7 +177,7 @@ const fetchOrders = async () => {
       return []
     }
 
-    const ordersArray = extractOrders(response)
+    let ordersArray = extractOrders(response)
     const pagination = response.pagination || {}
     const total = typeof pagination.total === 'number' ? pagination.total : ordersArray.length
     const pageCount = pagination.pages || Math.max(1, Math.ceil((total || 1) / itemsPerPage))
@@ -355,6 +375,11 @@ const handleJumpPage = () => {
 }
 
 onMounted(() => {
+  // 初始化时从URL获取tab状态
+  const tab = route.query.tab
+  if (tab && ['all', 'PAID', 'PENDING', 'REFUND'].includes(tab)) {
+    filterStatus.value = tab
+  }
   fetchOrders()
 })
 </script>
