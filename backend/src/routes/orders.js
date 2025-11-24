@@ -68,22 +68,45 @@ const markCouponUsed = async (couponId, userId) => {
 
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    const { page = 1, limit = 10, status, serviceId } = req.query
-    const where = {}
+    const { page = 1, limit = 10, orderStatus, serviceId, search, baseId, activityId, refundStatus } = req.query;
+    const where = {};
 
     if (req.user.role === 'STUDENT') {
-      where.userId = req.user.id
+      where.userId = req.user.id;
     }
-    // 管理员和超级管理员可以看到所有订单
 
-    if (status) {
-      if (status === 'REFUND') {
-        where.status = { in: ['REFUNDING', 'REFUNDED'] }
-      } else {
-        where.status = status
-      }
+    if (orderStatus) {
+      where.status = orderStatus;
     }
-    if (serviceId) where.serviceId = parseInt(serviceId)
+    
+    if (serviceId) {
+      where.serviceId = parseInt(serviceId);
+    }
+
+    if (search) {
+      where.OR = [
+        { orderNo: { contains: search, mode: 'insensitive' } },
+        { activity: { name: { contains: search, mode: 'insensitive' } } },
+      ];
+    }
+
+    if (activityId) {
+      where.activityId = parseInt(activityId);
+    } else if (baseId) {
+      where.activity = {
+        ...where.activity,
+        baseId: parseInt(baseId),
+      };
+    }
+    
+    if (refundStatus && refundStatus !== 'ALL') {
+        where.refunds = {
+            some: {
+                status: refundStatus
+            }
+        };
+    }
+
 
     const orders = await prisma.order.findMany({
       where,
@@ -93,21 +116,31 @@ router.get('/', authMiddleware, async (req, res) => {
       include: {
         user: { select: { name: true, phone: true, school: true } },
         service: { select: { title: true, coverImage: true } },
-        activity: { select: { id: true, name: true, type: true } },
-        refunds: { orderBy: { createdAt: 'desc' } }
+        activity: { 
+            select: { id: true, name: true, type: true, base: true }
+        },
+        refunds: { orderBy: { createdAt: 'desc' }, take: 1 } // Include the latest refund
       }
-    })
+    });
 
-    const total = await prisma.order.count({ where })
+    const total = await prisma.order.count({ where });
+
+    // Attach the single refund object directly to the order
+    const ordersWithRefund = orders.map(order => {
+        const { refunds, ...rest } = order;
+        return { ...rest, refund: refunds.length > 0 ? refunds[0] : null };
+    });
+
+
     res.json({
-      data: orders,
+      data: ordersWithRefund,
       pagination: { page: parseInt(page), limit: parseInt(limit), total, pages: Math.ceil(total / limit) }
-    })
+    });
   } catch (error) {
-    console.error(error)
-    res.status(500).json({ error: '服务器错误' })
+    console.error(error);
+    res.status(500).json({ error: '服务器错误' });
   }
-})
+});
 
 router.get('/:id', authMiddleware, async (req, res) => {
   try {

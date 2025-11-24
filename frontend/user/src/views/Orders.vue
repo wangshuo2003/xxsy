@@ -310,7 +310,7 @@ const handleCancel = async (order) => {
 const handleViewDetails = (order) => {
   // 点击查看详情按钮跳转到对应的活动详情页面
   if (order.activity) {
-    router.push(`/activity/${order.activity.id}`)
+    router.push(`/activity/${order.activity.id}/${order.orderNo}`)
   } else if (order.service) {
     showToast('服务详情功能开发中')
   }
@@ -320,7 +320,7 @@ const handleViewDetails = (order) => {
 const goToOrderDetail = (order) => {
   // 点击订单跳转到对应的活动详情页面
   if (order.activity) {
-    router.push(`/activity/${order.activity.id}`)
+    router.push(`/activity/${order.activity.id}/${order.orderNo}`)
   } else if (order.service) {
     showToast('服务详情功能开发中')
   }

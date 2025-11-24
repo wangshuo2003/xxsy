@@ -123,7 +123,7 @@ const routes = [
         meta: { title: '搜索结果' }
       },
       {
-        path: '/activity/:id',
+        path: '/activity/:id/:orderId?',
         name: 'ActivityDetail',
         component: () => import('@/views/ActivityDetail.vue'),
         meta: { title: '活动详情' }

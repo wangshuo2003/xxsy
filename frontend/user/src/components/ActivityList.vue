@@ -400,7 +400,8 @@ const handleRegister = async (activity) => {
         id: activity.id,
         name: activity.name,
         price: price,
-        image: activity.coverImage || '/default-activity.jpg'
+        image: activity.coverImage || '/default-activity.jpg',
+        orderId: activity.order.id // 修复：传递现有订单的ID
       }
     })
     return

@@ -68,82 +68,96 @@
         </van-button>
 
         <div class="main-actions">
-          <van-button
-            v-if="hasPendingRefund(activity)"
-            type="warning"
-            size="large"
-            block
-            disabled
-          >
-            退款审核中
-          </van-button>
-          <van-button
-            v-else-if="hasPaidForActivity(activity) && canRefund(activity)"
-            type="warning"
-            size="large"
-            block
-            @click="handleRefund"
-            :loading="refunding"
-            class="refund-button"
-          >
-            申请退款
-          </van-button>
-          <van-button
-            v-else-if="hasPaidForActivity(activity)"
-            type="success"
-            size="large"
-            block
-            disabled
-          >
-            已付款
-          </van-button>
-          <van-button
-            v-else-if="hasRefundCompleted(activity)"
-            type="default"
-            size="large"
-            block
-            disabled
-          >
-            已退款
-          </van-button>
-          <van-button
-            v-else-if="canRegister(activity) || isRegisteredUnpaid(activity)"
-            :type="getButtonType(activity)"
-            size="large"
-            block
-            @click="handleRegister"
-            :loading="registering"
-          >
-            {{ getButtonText(activity) }}
-          </van-button>
-          <van-button
-            v-else-if="isRegistered(activity) && !isRegisteredUnpaid(activity)"
-            :type="getButtonType(activity)"
-            size="large"
-            block
-            @click="activity.price && activity.price > 0 ? handleCancelRegistration() : null"
-            :loading="canceling && activity.price && activity.price > 0"
-            :disabled="!activity.price || activity.price === 0"
-            :class="activity.price && activity.price > 0 ? 'cancel-registration-btn' : ''"
-          >
-            {{ getButtonText(activity) }}
-          </van-button>
-          <van-button
-            v-else-if="isFull(activity)"
-            size="large"
-            block
-            disabled
-          >
-            人数已满
-          </van-button>
-          <van-button
-            v-else-if="isExpired(activity)"
-            size="large"
-            block
-            disabled
-          >
-            已结束
-          </van-button>
+          <!-- 1. 如果有来自URL的订单上下文 -->
+          <div v-if="order" style="display: contents;">
+            <van-button
+              v-if="order.status === 'PENDING'"
+              type="warning"
+              size="large"
+              block
+              @click="handlePay"
+            >
+              立即支付
+            </van-button>
+            <van-button
+              v-else-if="order.status === 'CANCELLED'"
+              type="primary"
+              size="large"
+              block
+              @click="handleRegister"
+              :loading="registering"
+            >
+              立即报名
+            </van-button>
+            <van-button
+              v-else-if="order.status === 'PAID' && canApplyForRefund"
+              type="warning"
+              size="large"
+              block
+              @click="handleRefund"
+              :loading="refunding"
+              class="refund-button"
+            >
+              申请退款
+            </van-button>
+            <van-button
+              v-else-if="order.status === 'PAID' && !canApplyForRefund"
+              type="success"
+              size="large"
+              block
+              disabled
+            >
+              已付款
+            </van-button>
+            <van-button
+              v-else-if="order.status === 'REFUNDING'"
+              type="warning"
+              size="large"
+              block
+              disabled
+            >
+              退款审核中
+            </van-button>
+            <van-button
+              v-else-if="order.status === 'REFUNDED'"
+              type="default"
+              size="large"
+              block
+              disabled
+            >
+              已退款
+            </van-button>
+          </div>
+
+          <!-- 2. 如果没有订单上下文，走默认报名逻辑 -->
+          <div v-else style="display: contents;">
+            <van-button
+              v-if="isFull(activity)"
+              size="large"
+              block
+              disabled
+            >
+              人数已满
+            </van-button>
+            <van-button
+              v-else-if="isExpired(activity)"
+              size="large"
+              block
+              disabled
+            >
+              已结束
+            </van-button>
+            <van-button
+              v-else-if="!userStore.isLoggedIn || (activity.isApproved && activity.isActive)"
+              type="primary"
+              size="large"
+              block
+              @click="handleRegister"
+              :loading="registering"
+            >
+              立即报名
+            </van-button>
+          </div>
         </div>
       </div>
     </div>
@@ -180,7 +194,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { showToast, showSuccessToast, showConfirmDialog } from 'vant'
@@ -196,69 +210,51 @@ const loading = ref(true)
 const registering = ref(false)
 const canceling = ref(false) // 取消报名loading状态
 const refunding = ref(false) // 退款loading状态
-const userRegistration = ref(null) // 用户的报名信息
+const order = ref(null) // 从URL获取的特定订单
+const userOrders = ref([]) // 用户的订单列表，用于查找特定订单
 const isFavorited = ref(false) // 是否已收藏
 const favoriteId = ref(null) // 收藏的ID
-const userOrders = ref([]) // 用户的订单列表
 const showRefundDialog = ref(false)
 const refundReason = ref('')
 
-// 获取用户订单
-const fetchUserOrders = async () => {
+const fetchPageData = async () => {
+  loading.value = true
   try {
-    const response = await request.get('/orders', {
-      params: { page: 1, limit: 100 }
-    })
-    userOrders.value = response.data || []
-  } catch (error) {
-    console.error('获取用户订单失败:', error)
-    userOrders.value = []
-  }
-}
+    // 1. 获取活动详情
+    const activityResponse = await axios.get(`/api/activities/${route.params.id}`)
+    activity.value = activityResponse.data.data
 
-// 获取活动详情
-const fetchActivityDetail = async () => {
-  try {
-    const response = await axios.get(`/api/activities/${route.params.id}`)
-    activity.value = response.data.data
-
-    // 如果用户已登录，检查报名状态、收藏状态和订单状态
+    // 2. 如果用户已登录，处理特定于用户的数据
     if (userStore.isLoggedIn) {
-      await Promise.all([
-        checkRegistrationStatus(),
-        checkFavoriteStatus(),
-        fetchUserOrders()
-      ])
+      const promises = [checkFavoriteStatus()]
+
+      // 如果有 orderId，我们需要获取订单列表来查找它
+      if (route.params.orderId) {
+        promises.push(
+          (async () => {
+            try {
+              const ordersResponse = await request.get('/orders', { params: { page: 1, limit: 500 } }) // 获取足够多的订单
+              userOrders.value = ordersResponse.data || []
+              order.value = userOrders.value.find(o => o.orderNo === route.params.orderId)
+            } catch (e) {
+              console.error('获取用户订单列表失败:', e)
+            }
+          })()
+        )
+      } else {
+        // 如果没有orderId，可能需要检查用户是否已通过其他方式报名（例如免费活动）
+        // 为简化起见，我们暂时只处理有orderId和完全未报名的情况
+        // 可以根据需要在这里添加检查用户报名的逻辑
+      }
+      
+      await Promise.all(promises)
     }
   } catch (error) {
     console.error('获取活动详情失败:', error)
+    activity.value = null // 清空活动数据
     showToast('获取活动详情失败')
   } finally {
     loading.value = false
-  }
-}
-
-// 检查用户报名状态
-const checkRegistrationStatus = async () => {
-  try {
-    // 获取用户的所有报名活动
-    const response = await axios.get('/api/activities/my-registrations', {
-      params: {
-        page: 1,
-        limit: 100  // 获取足够多的记录
-      },
-      headers: {
-        'Authorization': `Bearer ${userStore.token}`
-      }
-    })
-
-    // 查找当前活动的报名记录
-    const registrations = response.data.data || []
-    userRegistration.value = registrations.find(act => act.id === parseInt(route.params.id))
-  } catch (error) {
-    console.error('获取报名状态失败:', error)
-    // 忽略错误，用户未报名
-    userRegistration.value = null
   }
 }
 
@@ -344,110 +340,6 @@ const isFull = (activity) => {
   return activity.maxPeople && activity._count?.users >= activity.maxPeople
 }
 
-// 检查是否可以报名
-const canRegister = (activity) => {
-  return (
-    activity.isApproved &&
-    activity.isActive &&
-    !isExpired(activity) &&
-    !isRegistered(activity) &&
-    !isFull(activity)
-  )
-}
-
-// 检查用户是否已报名
-const isRegistered = (activity) => {
-  return userRegistration.value !== null && userRegistration.value !== undefined
-}
-
-// 检查是否已报名但未支付
-const isRegisteredUnpaid = (activity) => {
-  return isRegistered(activity) && !hasPaidForActivity(activity) && (activity.price && activity.price > 0)
-}
-
-const findOrderForActivity = (activityId) => {
-  return userOrders.value.find(order => order.activityId === activityId)
-}
-
-// 检查是否已支付
-const hasPaidForActivity = (activity) => {
-  if (activity.price === 0 || !activity.price) {
-    return false
-  }
-  const order = findOrderForActivity(activity.id)
-  if (!order) return false
-  if (order.status === 'REFUNDED') return false
-  return ['PAID', 'REFUNDING', 'COMPLETED'].includes(order.status)
-}
-
-const hasPendingRefund = (activity) => {
-  const order = findOrderForActivity(activity.id)
-  return order?.status === 'REFUNDING'
-}
-
-const hasRefundCompleted = (activity) => {
-  const order = findOrderForActivity(activity.id)
-  return order?.status === 'REFUNDED'
-}
-
-// 获取按钮文本
-const getButtonText = (activity) => {
-  const order = findOrderForActivity(activity.id)
-  if (order?.status === 'REFUNDING') {
-    return '退款审核中'
-  }
-  if (order?.status === 'REFUNDED') {
-    return '已退款'
-  }
-  if (hasPaidForActivity(activity)) {
-    return '已付款'
-  } else if (isRegisteredUnpaid(activity)) {
-    return '立即支付'
-  } else if (isRegistered(activity)) {
-    if (activity.price === 0 || !activity.price) {
-      const statusMap = {
-        'REGISTERED': '已报名待审核',
-        'APPROVED': '报名已通过',
-        'REJECTED': '报名已拒绝'
-      }
-      return statusMap[userRegistration.value?.status] || '已报名'
-    } else {
-      return '取消报名'
-    }
-  } else {
-    return '立即报名'
-  }
-}
-
-// 获取按钮类型
-const getButtonType = (activity) => {
-  const order = findOrderForActivity(activity.id)
-  if (order?.status === 'REFUNDING') {
-    return 'warning'
-  }
-  if (order?.status === 'REFUNDED') {
-    return 'default'
-  }
-  if (hasPaidForActivity(activity)) {
-    return 'success'
-  } else if (isRegisteredUnpaid(activity)) {
-    return 'warning'
-  } else if (isRegistered(activity)) {
-    if (activity.price === 0 || !activity.price) {
-      const typeMap = {
-        'REGISTERED': 'warning',
-        'APPROVED': 'success',
-        'REJECTED': 'danger'
-      }
-      return typeMap[userRegistration.value?.status] || 'default'
-    } else {
-      return 'danger'
-    }
-  } else {
-    return 'primary'
-  }
-}
-
 // 处理报名/支付
 const handleRegister = async () => {
   // 检查用户是否登录
@@ -456,28 +348,15 @@ const handleRegister = async () => {
     router.push('/login')
     return
   }
-
-  // 如果已报名但未支付，跳转到支付页面
-  if (isRegisteredUnpaid(activity.value)) {
-    const price = activity.value.price || 0
-    router.push({
-      path: '/payment',
-      query: {
-        type: 'activity',
-        id: activity.value.id,
-        name: activity.value.name,
-        price: price,
-        image: activity.value.coverImage || '/default-activity.jpg'
-      }
-    })
-    return
-  }
+  
+  const isReregister = order.value?.status === 'CANCELLED'
 
   // 正常报名流程
   try {
     registering.value = true
 
-    const response = await axios.post(
+    // 后端报名接口会创建订单
+    await axios.post(
       `/api/activities/${activity.value.id}/register`,
       {},
       {
@@ -487,28 +366,55 @@ const handleRegister = async () => {
       }
     )
 
-    // 报名成功后提示需要支付（如果活动有费用）
+    // 报名成功后，对于付费活动，根据场景决定是跳转还是提示
     if (activity.value.price && activity.value.price > 0) {
-      showToast('报名成功，请完成支付')
+      // 重新获取所有页面数据，特别是订单列表
+      await fetchPageData()
+      
+      // 在已取消订单页重新报名，则直接跳转到新订单
+      if (isReregister) {
+        const newOrder = userOrders.value
+          .filter(o => o.activityId === activity.value.id && o.status === 'PENDING')
+          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0]
+        
+        if (newOrder) {
+          // 步骤1: 替换当前历史记录为新订单的URL
+          await router.replace(`/activity/${activity.value.id}/${newOrder.orderNo}`)
+          // 步骤2: 跳转到支付页面（这会成为历史记录里的新的一页）
+          router.push({
+            path: '/payment',
+            query: {
+              type: 'activity',
+              id: activity.value.id,
+              name: activity.value.name,
+              price: activity.value.price,
+              image: activity.value.coverImage || '/default-activity.jpg',
+              orderId: newOrder.id, // 支付页面需要数字ID
+              orderNo: newOrder.orderNo // 也加上字符串订单号
+            }
+          })
+          return // 完成跳转，结束函数
+        }
+      }
+
+      // 对于其他情况（如首次报名），显示弹窗提示
+      await showConfirmDialog({
+        title: '报名成功',
+        message: '您的订单已创建，请前往“我的订单”页面完成支付。',
+        confirmButtonText: '查看订单',
+        cancelButtonText: '关闭',
+      }).then((result) => {
+        if (result) {
+          router.push('/orders')
+        }
+      })
+
     } else {
-      showToast('报名成功')
+      // 免费活动
+      showSuccessToast('报名成功')
+      await fetchPageData()
     }
 
-    // 重新获取活动详情和报名状态
-    await checkRegistrationStatus()
-    await fetchActivityDetail()
-
-    // 添加调试信息
-    console.log('=== 报名后调试信息 ===')
-    console.log('活动ID:', activity.value?.id)
-    console.log('活动价格:', activity.value?.price)
-    console.log('用户报名状态:', userRegistration.value)
-    console.log('用户订单列表:', userOrders.value)
-    console.log('是否已报名:', isRegistered(activity.value))
-    console.log('是否已支付:', hasPaidForActivity(activity.value))
-    console.log('是否需要支付:', isRegisteredUnpaid(activity.value))
-    console.log('按钮文本:', getButtonText(activity.value))
-    console.log('========================')
   } catch (error) {
     console.error('报名失败:', error)
     showToast(error.response?.data?.error || '报名失败，请稍后重试')
@@ -517,53 +423,34 @@ const handleRegister = async () => {
   }
 }
 
-// 处理取消报名
-const handleCancelRegistration = async () => {
-  try {
-    await showConfirmDialog({
-      title: '确认取消',
-      message: '确定要取消报名吗？',
-    })
+const handlePay = () => {
+  if (!order.value) return;
 
-    canceling.value = true
-
-    await axios.delete(
-      `/api/activities/${activity.value.id}/register`,
-      {
-        headers: {
-          'Authorization': `Bearer ${userStore.token}`
-        }
-      }
-    )
-
-    showToast('已取消报名')
-
-    // 清空报名信息并重新获取活动详情
-    userRegistration.value = null
-    await fetchActivityDetail()
-  } catch (error) {
-    if (error.message !== 'cancel') {
-      console.error('取消报名失败:', error)
-      showToast(error.response?.data?.error || '取消报名失败，请稍后重试')
+  const price = activity.value.price || 0
+  router.push({
+    path: '/payment',
+    query: {
+      type: 'activity',
+      id: activity.value.id,
+      name: activity.value.name,
+      price: price,
+      image: activity.value.coverImage || '/default-activity.jpg',
+      orderId: order.value.id // 传递订单ID用于更新支付状态
     }
-  } finally {
-    canceling.value = false
-  }
+  })
 }
 
 // 检查是否可以退款
-const canRefund = (activity) => {
-  if (!hasPaidForActivity(activity)) return false
-
-  const paidOrder = findOrderForActivity(activity.id)
-  if (!paidOrder || paidOrder.status !== 'PAID') return false
-
-  const activityTime = new Date(activity.time)
+const canApplyForRefund = computed(() => {
+  if (!order.value || !activity.value || order.value.status !== 'PAID') {
+    return false
+  }
+  // 活动开始前24小时以上才可退款
+  const activityTime = new Date(activity.value.time)
   const now = new Date()
-  const timeDiff = activityTime - now
-
+  const timeDiff = activityTime.getTime() - now.getTime()
   return timeDiff > 24 * 60 * 60 * 1000
-}
+})
 
 const handleRefund = () => {
   refundReason.value = ''
@@ -571,23 +458,25 @@ const handleRefund = () => {
 }
 
 const submitRefundRequest = async () => {
-  if (!activity.value) return
-  if (refunding.value) return
-  const paidOrder = findOrderForActivity(activity.value.id)
-
-  if (!paidOrder || paidOrder.status !== 'PAID') {
+  if (!order.value) {
     showToast('找不到可退款的订单')
+    return
+  }
+  if (refunding.value) return
+
+  if (order.value.status !== 'PAID') {
+    showToast('订单状态不正确，无法退款')
     return
   }
 
   try {
     refunding.value = true
-    await request.post(`/orders/${paidOrder.id}/refund`, {
+    await request.post(`/orders/${order.value.id}/refund`, {
       reason: refundReason.value.trim() || '用户申请退款'
     })
     showSuccessToast('退款申请已提交')
     showRefundDialog.value = false
-    await fetchUserOrders()
+    await fetchPageData() // 刷新页面数据
   } catch (error) {
     console.error('退款失败:', error)
     showToast(error.response?.data?.error || '退款失败，请稍后重试')
@@ -603,7 +492,13 @@ const handleCloseRefundDialog = () => {
 }
 
 onMounted(() => {
-  fetchActivityDetail()
+  fetchPageData()
+})
+
+watch(() => route.params.orderId, (newOrderId, oldOrderId) => {
+  if (newOrderId !== oldOrderId) {
+    fetchPageData()
+  }
 })
 </script>
 
