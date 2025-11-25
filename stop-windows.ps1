@@ -39,11 +39,9 @@ try {
     exit 1
 }
 
-if (Get-Command docker -ErrorAction SilentlyContinue) {
-    if (-not (Test-DockerEngine)) {
-        Write-Error "[$platform] 检测到 Docker 未启动，请先启动 Docker Desktop。"
-        exit 1
-    }
+if (-not (Test-DockerEngine)) {
+    Write-Host "Docker 未运行，服务已是停止状态。"
+    exit 0
 }
 
 $composeArgs = @("down")

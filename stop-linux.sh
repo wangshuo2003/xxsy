@@ -10,8 +10,8 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 
 if ! docker info >/dev/null 2>&1; then
-  echo "[$PLATFORM_NAME] 无法访问 Docker 守护进程，请确认 Docker 已启动并且当前用户位于 docker 组（或使用 sudo 运行本脚本）。" >&2
-  exit 1
+  echo "Docker 未运行，服务已是停止状态。"
+  exit 0
 fi
 
 compose_cmd=(docker compose)

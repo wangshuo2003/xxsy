@@ -13,8 +13,25 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 
 if ! docker info >/dev/null 2>&1; then
-  echo "[$PLATFORM_NAME] 无法访问 Docker 守护进程，请确认 Docker 已启动并且当前用户位于 docker 组（或使用 sudo 运行本脚本）。" >&2
-  exit 1
+  echo "Docker 守护进程未运行，正在尝试启动..."
+  # Best-effort attempt to start Docker. This may require root privileges.
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl start docker &>/dev/null || true
+  fi
+
+  echo "正在等待 Docker 守护进程响应... (最多等待 15 秒)"
+  for i in {1..3}; do
+    if docker info >/dev/null 2>&1; then
+      echo "Docker 已成功启动。"
+      break
+    fi
+    sleep 5
+  done
+
+  if ! docker info >/dev/null 2>&1; then
+    echo "启动 Docker 失败。请尝试使用 'sudo systemctl start docker' 手动启动，并确保当前用户位于 'docker' 用户组中。" >&2
+    exit 1
+  fi
 fi
 
 compose_cmd=(docker compose)

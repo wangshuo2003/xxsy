@@ -13,8 +13,22 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 
 if ! docker info >/dev/null 2>&1; then
-  echo "[$PLATFORM_NAME] Docker 未运行，请先启动 Docker Desktop。" >&2
-  exit 1
+  echo "Docker 未运行，正在尝试启动 Docker Desktop..."
+  open -a Docker
+
+  echo "正在等待 Docker 守护进程启动，请稍候... (最多等待 60 秒)"
+  for i in {1..12}; do
+    if docker info >/dev/null 2>&1; then
+      echo "Docker 已成功启动。"
+      break
+    fi
+    sleep 5
+  done
+
+  if ! docker info >/dev/null 2>&1; then
+    echo "启动 Docker 失败。请确保 Docker Desktop 已正确安装并手动启动一次。" >&2
+    exit 1
+  fi
 fi
 
 compose_cmd=(docker compose)

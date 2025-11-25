@@ -10,8 +10,8 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 
 if ! docker info >/dev/null 2>&1; then
-  echo "[$PLATFORM_NAME] Docker 未运行，请先启动 Docker Desktop。" >&2
-  exit 1
+  echo "Docker 未运行，服务已是停止状态。"
+  exit 0
 fi
 
 compose_cmd=(docker compose)

@@ -41,11 +41,36 @@ try {
     exit 1
 }
 
-if (Get-Command docker -ErrorAction SilentlyContinue) {
+if (-not (Test-DockerEngine)) {
+    Write-Host "Docker 未运行，正在尝试启动 Docker Desktop..."
+    try {
+        # Best-effort attempt to find and start Docker Desktop
+        $dockerPath = (Get-Item "C:\Program Files\Docker\Docker\Docker Desktop.exe" -ErrorAction SilentlyContinue).FullName
+        if ($dockerPath) {
+            Start-Process -FilePath $dockerPath -ErrorAction SilentlyContinue
+        } else {
+            # Fallback to starting by app name
+            Start-Process "Docker Desktop" -ErrorAction SilentlyContinue
+        }
+    } catch {
+        # Silently continue, the check below will determine if it worked
+    }
+
+    Write-Host "正在等待 Docker 守护进程启动，请稍候... (最多等待 60 秒)"
+    $wait = 0
+    while ($wait -lt 12) { # 12 * 5s = 60s
+        if (Test-DockerEngine) {
+            break
+        }
+        Start-Sleep -Seconds 5
+        $wait++
+    }
+
     if (-not (Test-DockerEngine)) {
-        Write-Error "[$platform] 检测到 Docker 未启动，请先启动 Docker Desktop。"
+        Write-Host "启动 Docker 失败。请确保 Docker Desktop 已正确安装并手动启动一次。"
         exit 1
     }
+    Write-Host "Docker 已成功启动。" -ForegroundColor Green
 }
 
 function Invoke-ComposeCommand {
