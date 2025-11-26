@@ -76,8 +76,10 @@ app.use(helmet({
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 
-// 静态文件服务
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')))
+// 静态文件服务（同时暴露 /uploads 与 /api/uploads，便于前端同域访问）
+const uploadsPath = path.join(__dirname, '../uploads')
+app.use('/uploads', express.static(uploadsPath))
+app.use('/api/uploads', express.static(uploadsPath))
 
 // 路由
 app.use('/api/auth', require('./routes/auth'))
@@ -95,6 +97,7 @@ app.use('/api/balance', require('./routes/balance').router)
 app.use('/api/gift-cards', require('./routes/giftCards'))
 app.use('/api/base-coupons', require('./routes/baseCoupons'))
 app.use('/api/refunds', require('./routes/refunds'))
+app.use('/api/external', require('./routes/external'))
 
 // 健康检查
 app.get('/health', (req, res) => {

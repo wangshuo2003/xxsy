@@ -124,7 +124,7 @@ router.get('/my-registrations', authMiddleware, async (req, res) => {
       where: {
         userId: req.user.id,
         activityId: { in: activityIds },
-        status: { in: ['PENDING', 'PAID'] }
+        status: { in: ['PENDING', 'PAID', 'REFUNDED'] }
       },
       select: {
         id: true,
@@ -451,7 +451,29 @@ router.post('/:id/register', authMiddleware, async (req, res) => {
         }
       }
     })
-    if (existingRegistration) return res.status(400).json({ error: '已报名该活动' })
+    if (existingRegistration) {
+      // 允许已退款或已取消的订单重新报名：删除旧报名记录
+      const latestOrder = await prisma.order.findFirst({
+        where: {
+          userId: req.user.id,
+          activityId: parseInt(req.params.id)
+        },
+        orderBy: { createdAt: 'desc' }
+      })
+
+      if (latestOrder && ['REFUNDED', 'CANCELLED'].includes(latestOrder.status)) {
+        await prisma.userActivity.delete({
+          where: {
+            userId_activityId: {
+              userId: req.user.id,
+              activityId: parseInt(req.params.id)
+            }
+          }
+        })
+      } else {
+        return res.status(400).json({ error: '已报名该活动' })
+      }
+    }
 
     if (activity.maxPeople) {
       const currentCount = await prisma.userActivity.count({

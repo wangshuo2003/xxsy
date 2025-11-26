@@ -25,6 +25,9 @@ export default defineConfig({
       '@': resolve(__dirname, 'src')
     }
   },
+  build: {
+    emptyOutDir: true
+  },
   server: {
     port: 8964,
     proxy: {

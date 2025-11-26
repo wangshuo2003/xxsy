@@ -395,8 +395,8 @@ const handlePayment = async () => {
       showSuccessToast(successMessage)
     }
 
-    // 跳转到订单详情或订单列表
-    router.push('/orders')
+    // 跳转到订单列表（replace 避免返回到支付页）
+    router.replace('/orders')
   } catch (error) {
     console.error('支付失败:', error)
     showToast(error.response?.data?.error || '订单创建失败，请稍后重试')

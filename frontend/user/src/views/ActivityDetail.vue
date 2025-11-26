@@ -7,7 +7,7 @@
     <div v-else-if="activity" class="content">
       <!-- 活动图片 -->
       <div class="activity-image">
-        <img :src="activity.coverImage || '/default-activity.jpg'" :alt="activity.name" />
+        <img :src="activity.coverImage || bingFallback" :alt="activity.name" />
       </div>
 
       <!-- 活动信息 -->
@@ -61,7 +61,7 @@
           class="favorite-button"
           :class="{ 'favorited': isFavorited }"
           plain
-          size="small"
+          size="large"
           @click="toggleFavorite"
         >
           {{ isFavorited ? '已收藏' : '收藏' }}
@@ -91,7 +91,7 @@
             </van-button>
             <van-button
               v-else-if="order.status === 'PAID' && canApplyForRefund"
-              type="warning"
+              type="danger"
               size="large"
               block
               @click="handleRefund"
@@ -197,13 +197,15 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
-import { showToast, showSuccessToast, showConfirmDialog } from 'vant'
+import { showToast, showSuccessToast } from 'vant'
 import axios from 'axios'
 import request from '@/api/request'
+import { getBingFallback } from '@/utils/bingFallback'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
+const bingFallback = getBingFallback()
 
 const activity = ref(null)
 const loading = ref(true)
@@ -217,6 +219,90 @@ const favoriteId = ref(null) // 收藏的ID
 const showRefundDialog = ref(false)
 const refundReason = ref('')
 
+const loadUserOrdersForActivity = async () => {
+  if (!userStore.isLoggedIn || !activity.value) return null
+  try {
+    const ordersResponse = await request.get('/orders', {
+      params: { page: 1, limit: 500, activityId: activity.value.id }
+    })
+    userOrders.value = ordersResponse.data || []
+
+    // 已有订单号时直接匹配
+    if (route.params.orderId) {
+      order.value = userOrders.value.find(o => o.orderNo === route.params.orderId) || null
+      return order.value
+    }
+
+    // 未带订单号，自动匹配最近的待支付或已支付订单
+    const targetOrder = userOrders.value
+      .filter(o => o.activityId === activity.value.id && ['PENDING', 'PAID', 'REFUNDING'].includes(o.status))
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0]
+
+    if (targetOrder) {
+      order.value = targetOrder
+      try {
+        await router.replace(`/activity/${activity.value.id}/${targetOrder.orderNo}`)
+      } catch (err) {
+        console.error('更新订单上下文失败:', err)
+      }
+    }
+
+    return targetOrder
+  } catch (error) {
+    console.error('获取用户订单列表失败:', error)
+    return null
+  }
+}
+
+const findLatestPendingOrder = async () => {
+  if (!activity.value) return null
+
+  // 先利用已有订单列表
+  if (userOrders.value.length) {
+    const cached = userOrders.value
+      .filter(o => o.activityId === activity.value.id && o.status === 'PENDING')
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0]
+    if (cached) return cached
+  }
+
+  // 没有缓存再拉取
+  return loadUserOrdersForActivity()
+}
+
+const redirectToPayment = async (targetOrder, toastMessage = null) => {
+  if (!targetOrder) return false
+
+  order.value = targetOrder
+  userOrders.value = [targetOrder, ...userOrders.value.filter(o => o.id !== targetOrder.id)]
+
+  if (targetOrder.orderNo) {
+    try {
+      await router.replace(`/activity/${activity.value.id}/${targetOrder.orderNo}`)
+    } catch (err) {
+      console.error('更新订单上下文失败:', err)
+    }
+  }
+
+  if (toastMessage) {
+    showSuccessToast(toastMessage)
+  }
+
+  router.push({
+    path: '/payment',
+    query: {
+      type: 'activity',
+      id: activity.value.id,
+      name: activity.value.name,
+      price: activity.value.price || 0,
+      image: activity.value.coverImage || bingFallback,
+      orderId: targetOrder.id,
+      orderNo: targetOrder.orderNo
+    }
+  })
+
+  return true
+}
+
 const fetchPageData = async () => {
   loading.value = true
   try {
@@ -226,27 +312,7 @@ const fetchPageData = async () => {
 
     // 2. 如果用户已登录，处理特定于用户的数据
     if (userStore.isLoggedIn) {
-      const promises = [checkFavoriteStatus()]
-
-      // 如果有 orderId，我们需要获取订单列表来查找它
-      if (route.params.orderId) {
-        promises.push(
-          (async () => {
-            try {
-              const ordersResponse = await request.get('/orders', { params: { page: 1, limit: 500 } }) // 获取足够多的订单
-              userOrders.value = ordersResponse.data || []
-              order.value = userOrders.value.find(o => o.orderNo === route.params.orderId)
-            } catch (e) {
-              console.error('获取用户订单列表失败:', e)
-            }
-          })()
-        )
-      } else {
-        // 如果没有orderId，可能需要检查用户是否已通过其他方式报名（例如免费活动）
-        // 为简化起见，我们暂时只处理有orderId和完全未报名的情况
-        // 可以根据需要在这里添加检查用户报名的逻辑
-      }
-      
+      const promises = [checkFavoriteStatus(), loadUserOrdersForActivity()]
       await Promise.all(promises)
     }
   } catch (error) {
@@ -260,11 +326,16 @@ const fetchPageData = async () => {
 
 // 检查收藏状态
 const checkFavoriteStatus = async () => {
+  const activityId = parseInt(route.params.id)
+  if (!activityId || Number.isNaN(activityId)) {
+    return
+  }
+
   try {
     const response = await request.get('/favorites/check', {
       params: {
         targetType: 'activity',
-        targetId: parseInt(route.params.id)
+        targetId: activityId
       }
     })
     isFavorited.value = response.isFavorited
@@ -348,15 +419,13 @@ const handleRegister = async () => {
     router.push('/login')
     return
   }
-  
-  const isReregister = order.value?.status === 'CANCELLED'
 
   // 正常报名流程
   try {
     registering.value = true
 
     // 后端报名接口会创建订单
-    await axios.post(
+    const registerResponse = await axios.post(
       `/api/activities/${activity.value.id}/register`,
       {},
       {
@@ -366,54 +435,27 @@ const handleRegister = async () => {
       }
     )
 
-    // 报名成功后，对于付费活动，根据场景决定是跳转还是提示
-    if (activity.value.price && activity.value.price > 0) {
-      // 重新获取所有页面数据，特别是订单列表
-      await fetchPageData()
-      
-      // 在已取消订单页重新报名，则直接跳转到新订单
-      if (isReregister) {
-        const newOrder = userOrders.value
-          .filter(o => o.activityId === activity.value.id && o.status === 'PENDING')
-          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0]
-        
-        if (newOrder) {
-          // 步骤1: 替换当前历史记录为新订单的URL
-          await router.replace(`/activity/${activity.value.id}/${newOrder.orderNo}`)
-          // 步骤2: 跳转到支付页面（这会成为历史记录里的新的一页）
-          router.push({
-            path: '/payment',
-            query: {
-              type: 'activity',
-              id: activity.value.id,
-              name: activity.value.name,
-              price: activity.value.price,
-              image: activity.value.coverImage || '/default-activity.jpg',
-              orderId: newOrder.id, // 支付页面需要数字ID
-              orderNo: newOrder.orderNo // 也加上字符串订单号
-            }
-          })
-          return // 完成跳转，结束函数
-        }
+    const createdOrder = registerResponse.data?.data?.order
+    const price = activity.value.price || 0
+
+    if (price > 0) {
+      let targetOrder = createdOrder
+      if (!targetOrder) {
+        targetOrder = await findLatestPendingOrder()
       }
 
-      // 对于其他情况（如首次报名），显示弹窗提示
-      await showConfirmDialog({
-        title: '报名成功',
-        message: '您的订单已创建，请前往“我的订单”页面完成支付。',
-        confirmButtonText: '查看订单',
-        cancelButtonText: '关闭',
-      }).then((result) => {
-        if (result) {
-          router.push('/orders')
-        }
-      })
+      if (await redirectToPayment(targetOrder, '报名成功，前往支付')) {
+        return
+      }
 
-    } else {
-      // 免费活动
-      showSuccessToast('报名成功')
-      await fetchPageData()
+      showToast('报名成功，但暂未找到订单，请稍后在“我的订单”查看')
+      router.push('/orders')
+      return
     }
+
+    // 免费活动
+    showSuccessToast('报名成功')
+    await fetchPageData()
 
   } catch (error) {
     console.error('报名失败:', error)
@@ -424,20 +466,8 @@ const handleRegister = async () => {
 }
 
 const handlePay = () => {
-  if (!order.value) return;
-
-  const price = activity.value.price || 0
-  router.push({
-    path: '/payment',
-    query: {
-      type: 'activity',
-      id: activity.value.id,
-      name: activity.value.name,
-      price: price,
-      image: activity.value.coverImage || '/default-activity.jpg',
-      orderId: order.value.id // 传递订单ID用于更新支付状态
-    }
-  })
+  if (!order.value) return
+  redirectToPayment(order.value)
 }
 
 // 检查是否可以退款
@@ -610,13 +640,14 @@ watch(() => route.params.orderId, (newOrderId, oldOrderId) => {
   box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
   z-index: 100;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 12px;
 }
 
 .main-actions {
   flex: 1;
   display: flex;
+  gap: 12px;
 }
 
 .favorite-btn {
@@ -632,6 +663,7 @@ watch(() => route.params.orderId, (newOrderId, oldOrderId) => {
 .favorite-button {
   transition: all 0.3s ease;
   min-width: 80px;
+  flex: 1;
 }
 
 .favorite-button.favorited {
@@ -648,9 +680,9 @@ watch(() => route.params.orderId, (newOrderId, oldOrderId) => {
 }
 
 .refund-button {
-  background-color: #ff976a !important;
+  background-color: #ee0a24 !important;
   color: white !important;
-  border-color: #ff976a !important;
+  border-color: #ee0a24 !important;
 }
 
 .error {

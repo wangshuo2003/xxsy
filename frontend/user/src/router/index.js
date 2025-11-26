@@ -147,6 +147,12 @@ const routes = [
         meta: { title: '我的余额', requiresAuth: true }
       },
       {
+        path: '/balance/transactions',
+        name: 'BalanceTransactions',
+        component: () => import('@/views/BalanceTransactions.vue'),
+        meta: { title: '交易记录', requiresAuth: true }
+      },
+      {
         path: '/orders',
         name: 'Orders',
         component: () => import('@/views/Orders.vue'),

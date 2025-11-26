@@ -87,6 +87,7 @@
 import { ref, onMounted, watch, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { showToast, showSuccessToast, showConfirmDialog } from 'vant'
+import { useUserStore } from '../stores/user'
 import request from '@/api/request'
 
 const props = defineProps({
@@ -99,6 +100,7 @@ const props = defineProps({
 
 const router = useRouter()
 const route = useRoute()
+const userStore = useUserStore()
 
 const routeType = computed(() =>
   route.path.includes('policies') ? 'policy' : 'activity'
@@ -133,6 +135,11 @@ const formatActivityTime = (dateString) => {
 }
 
 const loadFavorites = async () => {
+  if (!userStore.isLoggedIn || !userStore.token) {
+    favorites.value = []
+    loading.value = false
+    return
+  }
   loading.value = true
   try {
     const response = await request.get('/favorites', {
@@ -166,6 +173,11 @@ const goToRecommendations = () => {
 }
 
 const removeFavorite = async (favoriteId) => {
+  if (!userStore.isLoggedIn || !userStore.token) {
+    showToast('请先登录后再操作')
+    router.push('/login')
+    return
+  }
   try {
     await showConfirmDialog({
       title: '确认取消收藏',

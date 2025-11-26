@@ -45,7 +45,7 @@
           :key="activity.id"
           :title="activity.name"
           :desc="activity.base?.name"
-          :thumb="activity.coverImage || '/default-activity.jpg'"
+          :thumb="activity.coverImage || bingFallback"
           @click="viewActivity(activity)"
         >
           <template #tags>
@@ -96,9 +96,11 @@ import { showSuccessToast } from 'vant'
 import { useUserStore } from '@/stores/user'
 import Carousels from './Carousels.vue'
 import request from '@/api/request'
+import { getBingFallback } from '@/utils/bingFallback'
 
 const router = useRouter()
 const userStore = useUserStore()
+const bingFallback = getBingFallback()
 
 const recentActivities = ref([])
 const hotServices = ref([])

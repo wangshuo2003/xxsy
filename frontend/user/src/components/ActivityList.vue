@@ -12,7 +12,7 @@
         :key="activity.id"
         class="activity-card"
         :title="activity.name"
-        :thumb="activity.coverImage || '/default-activity.jpg'"
+        :thumb="getActivityThumb(activity)"
         @click="goToDetail(activity.id)"
       >
         <template #tags>
@@ -56,57 +56,62 @@
 
         <template #footer>
           <div class="activity-footer">
-            <van-button
-              class="favorite-button"
-              :class="{ 'favorited': isFavorited(activity.id) }"
-              plain
-              size="small"
-              @click.stop="toggleFavorite(activity.id)"
-            >
-              {{ isFavorited(activity.id) ? '已收藏' : '收藏' }}
-            </van-button>
-            <van-button
-              size="small"
-              type="primary"
-              plain
-              @click.stop="goToDetail(activity.id)"
-            >
-              查看详情
-            </van-button>
-            <van-button
-              v-if="canRegister(activity)"
-              size="small"
-              type="primary"
-              @click.stop="handleRegister(activity)"
-              :loading="registering[activity.id]"
-            >
-              立即报名
-            </van-button>
-            <van-button
-              v-else-if="isRegistered(activity)"
-              size="small"
-              :type="getRegisteredButtonType(activity)"
-              :plain="!isRegisteredUnpaid(activity)"
-              :disabled="!isRegisteredUnpaid(activity)"
-              @click.stop="handleRegister(activity)"
-              :loading="registering[activity.id]"
-            >
-              {{ getRegisteredButtonText(activity) }}
-            </van-button>
-            <van-button
-              v-else-if="isFull(activity)"
-              size="small"
-              disabled
-            >
-              人数已满
-            </van-button>
-            <van-button
-              v-else-if="isExpired(activity)"
-              size="small"
-              disabled
-            >
-              已结束
-            </van-button>
+            <template v-if="props.dataReady">
+              <van-button
+                class="favorite-button"
+                :class="{ 'favorited': isFavorited(activity.id) }"
+                plain
+                size="small"
+                @click.stop="toggleFavorite(activity.id)"
+              >
+                {{ isFavorited(activity.id) ? '已收藏' : '收藏' }}
+              </van-button>
+              <van-button
+                size="small"
+                type="primary"
+                plain
+                @click.stop="goToDetail(activity.id)"
+              >
+                查看详情
+              </van-button>
+              <van-button
+                v-if="canRegister(activity)"
+                size="small"
+                type="primary"
+                @click.stop="handleRegister(activity)"
+                :loading="registering[activity.id]"
+              >
+                立即报名
+              </van-button>
+              <van-button
+                v-else-if="isRegistered(activity)"
+                size="small"
+                :type="getRegisteredButtonType(activity)"
+                :plain="!isRegisteredUnpaid(activity)"
+                :disabled="!isRegisteredUnpaid(activity)"
+                @click.stop="handleRegister(activity)"
+                :loading="registering[activity.id]"
+              >
+                {{ getRegisteredButtonText(activity) }}
+              </van-button>
+              <van-button
+                v-else-if="isFull(activity)"
+                size="small"
+                disabled
+              >
+                人数已满
+              </van-button>
+              <van-button
+                v-else-if="isExpired(activity)"
+                size="small"
+                disabled
+              >
+                已结束
+              </van-button>
+            </template>
+            <template v-else>
+              <div class="button-placeholder"></div>
+            </template>
           </div>
         </template>
       </van-card>
@@ -126,8 +131,9 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/user'
 import axios from 'axios'
-import { showSuccessToast, showDialog, showFailToast } from 'vant'
+import { showSuccessToast, showDialog, showFailToast, showToast } from 'vant'
 import request from '@/api/request'
+import { getBingFallback } from '@/utils/bingFallback'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -136,6 +142,14 @@ const props = defineProps({
   activities: {
     type: Array,
     default: () => []
+  },
+  fallbackImage: {
+    type: String,
+    default: 'https://www.bing.com/th?id=OHR.GuarAlMadagascar_ZH-CN5676201563_1920x1080.jpg'
+  },
+  dataReady: {
+    type: Boolean,
+    default: true
   },
   loading: {
     type: Boolean,
@@ -154,13 +168,31 @@ const props = defineProps({
 const emit = defineEmits(['load-more', 'refresh'])
 
 const registering = ref({})
+const activityThumbCache = new Map()
 const favoriteMap = ref({}) // 存储收藏状态和ID的映射
 // 如果禁用了无限滚动，则直接视为 finished，交由外部按钮控制
 const finished = computed(() => !props.infinite || !props.hasMore)
 const userOrders = ref([]) // 用户的订单列表
 
+const getActivityThumb = (activity) => {
+  if (activity.coverImage) return activity.coverImage
+  const cached = activityThumbCache.get(activity.id)
+  if (cached) return cached
+  // 使用今日 Bing 壁纸作为兜底
+  const bingUrl = getBingFallback()
+  const fallback = bingUrl || props.fallbackImage
+  activityThumbCache.set(activity.id, fallback)
+  return fallback
+}
+
 const findOrderForActivity = (activityId) => {
   return userOrders.value.find(order => order.activityId === activityId)
+}
+
+const getActivityOrder = (activity) => {
+  // 优先使用列表数据自带的订单（从 my-registrations 返回），否则再查用户订单列表
+  if (activity.order) return activity.order
+  return findOrderForActivity(activity.id)
 }
 
 
@@ -180,6 +212,14 @@ const fetchUserOrders = async () => {
     console.error('获取用户订单失败:', error)
     userOrders.value = []
   }
+}
+
+const getLatestPendingOrder = async (activityId) => {
+  if (!userStore.isLoggedIn) return null
+  await fetchUserOrders()
+  return userOrders.value
+    .filter(order => order.activityId === activityId && order.status === 'PENDING')
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0]
 }
 
 // 当活动列表改变时，加载收藏状态和订单状态
@@ -319,7 +359,7 @@ const hasPaidForActivity = (activity) => {
   if (activity.price === 0 || !activity.price) {
     return false
   }
-  const order = findOrderForActivity(activity.id)
+  const order = getActivityOrder(activity)
   if (!order) return false
   if (order.status === 'REFUNDED') return false
   return ['PAID', 'REFUNDING', 'COMPLETED'].includes(order.status)
@@ -327,12 +367,16 @@ const hasPaidForActivity = (activity) => {
 
 // 检查是否已报名但未支付
 const isRegisteredUnpaid = (activity) => {
-  return isRegistered(activity) && !hasPaidForActivity(activity) && (activity.price && activity.price > 0)
+  // 若已有订单且状态为 PENDING，则视为未支付
+  const order = getActivityOrder(activity)
+  const hasPendingOrder = order?.status === 'PENDING'
+  const unpaidByRegistration = isRegistered(activity) && !hasPaidForActivity(activity) && (activity.price && activity.price > 0)
+  return hasPendingOrder || unpaidByRegistration
 }
 
 // 获取已报名活动的按钮文本
 const getRegisteredButtonText = (activity) => {
-  const order = findOrderForActivity(activity.id)
+  const order = getActivityOrder(activity)
   if (order?.status === 'REFUNDING') {
     return '退款审核中'
   } else if (order?.status === 'REFUNDED') {
@@ -353,7 +397,7 @@ const getRegisteredButtonText = (activity) => {
 
 // 获取已报名活动的按钮类型
 const getRegisteredButtonType = (activity) => {
-  const order = findOrderForActivity(activity.id)
+  const order = getActivityOrder(activity)
   if (order?.status === 'REFUNDING') {
     return 'warning'
   } else if (order?.status === 'REFUNDED') {
@@ -400,7 +444,7 @@ const handleRegister = async (activity) => {
         id: activity.id,
         name: activity.name,
         price: price,
-        image: activity.coverImage || '/default-activity.jpg',
+        image: activity.coverImage || getBingFallback(),
         orderId: activity.order.id // 修复：传递现有订单的ID
       }
     })
@@ -420,12 +464,39 @@ const handleRegister = async (activity) => {
       }
     )
 
-    const needsPayment = response.data?.needsPayment
+    let targetOrder = response.data?.data?.order
+    const price = activity.price || 0
 
-    // 报名成功后提示需要支付（如果活动有费用）
-    const successMessage = response.data?.message
-      || (needsPayment ? '报名成功，请完成支付' : '报名成功')
+    if (price > 0) {
+      if (!targetOrder) {
+        targetOrder = await getLatestPendingOrder(activity.id)
+      }
 
+      if (targetOrder) {
+        showSuccessToast({
+          message: '报名成功，前往支付',
+          duration: 1500
+        })
+        router.push({
+          path: '/payment',
+          query: {
+            type: 'activity',
+            id: activity.id,
+            name: activity.name,
+            price: price,
+            image: activity.coverImage || getBingFallback(),
+            orderId: targetOrder.id,
+            orderNo: targetOrder.orderNo
+          }
+        })
+      } else {
+        showToast('报名成功，但暂未找到订单，请稍后在“我的订单”查看')
+        router.push('/orders')
+      }
+      return
+    }
+
+    const successMessage = response.data?.message || '报名成功'
     showSuccessToast({
       message: successMessage,
       duration: 2000
@@ -519,6 +590,17 @@ watch(() => props.activities, () => {
   align-items: center;
   gap: 8px;
   margin-top: 8px;
+}
+
+.activity-footer :deep(.van-button) {
+  flex: 1;
+  min-width: 0;
+  justify-content: center;
+}
+
+.button-placeholder {
+  flex: 1;
+  height: 32px;
 }
 
 .favorite-icon {

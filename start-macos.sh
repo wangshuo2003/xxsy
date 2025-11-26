@@ -47,6 +47,9 @@ compose_run() {
   (cd "$ROOT_DIR" && COMPOSE_PROJECT_NAME="$PROJECT_NAME" "${compose_cmd[@]}" "$@")
 }
 
+echo "[$PLATFORM_NAME] 清理前端构建产物..."
+rm -rf "$ROOT_DIR/frontend/user/dist" "$ROOT_DIR/frontend/admin/dist" || true
+
 compose_args=(up -d)
 if [[ "${1:-}" == "--rebuild" ]]; then
   compose_args=(up -d --build)

@@ -107,6 +107,7 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { showToast, showSuccessToast, showConfirmDialog } from 'vant'
 import request from '@/api/request'
+import { getBingFallback } from '@/utils/bingFallback'
 
 const router = useRouter()
 const route = useRoute()
@@ -118,6 +119,7 @@ const currentPage = ref(1)
 const itemsPerPage = 10
 const totalOrders = ref(0)
 const jumpPageInput = ref('')
+const bingFallback = getBingFallback()
 
 const statusTabs = [
   { label: '全部', value: 'all' },
@@ -233,9 +235,9 @@ const getOrderImage = (order) => {
   }
   // Activity没有coverImage字段，使用默认图片
   if (order.activity) {
-    return '/default-activity.jpg'
+    return bingFallback
   }
-  return '/default-product.jpg'
+  return bingFallback
 }
 
 // 获取状态文本
@@ -328,11 +330,8 @@ const goToOrderDetail = (order) => {
 
 // 返回上一页
 const handleGoBack = () => {
-  if (window.history.length > 1) {
-    router.go(-1)
-  } else {
-    router.push('/home')
-  }
+  // 从订单页返回时，统一落到“我的”，避免回到支付页
+  router.push('/profile')
 }
 
 const totalPages = computed(() => Math.max(1, Math.ceil((totalOrders.value || 0) / itemsPerPage)))

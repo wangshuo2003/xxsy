@@ -4,7 +4,7 @@
       <!-- 活动类型标签 -->
       <van-tabs v-model:active="activeTab" @change="onTabChange" sticky>
         <van-tab title="赛事" name="赛事">
-          <ActivityList :activities="filteredActivities" :loading="loading" :has-more="false" :infinite="false" @refresh="refreshActivities" />
+          <ActivityList :activities="filteredActivities" :loading="loading" :has-more="false" :infinite="false" :data-ready="dataReady" :fallback-image="bingFallback" @refresh="refreshActivities" />
           <div v-if="totalPages > 1" class="activities-pagination">
             <van-button size="small" :disabled="page <= 1" @click="handleGoToFirst">首页</van-button>
             <van-button size="small" :disabled="page <= 1" @click="handlePrevPage">上一页</van-button>
@@ -25,7 +25,7 @@
           </div>
         </van-tab>
         <van-tab title="研学" name="研学">
-          <ActivityList :activities="filteredActivities" :loading="loading" :has-more="false" :infinite="false" @refresh="refreshActivities" />
+          <ActivityList :activities="filteredActivities" :loading="loading" :has-more="false" :infinite="false" :data-ready="dataReady" :fallback-image="bingFallback" @refresh="refreshActivities" />
           <div v-if="totalPages > 1" class="activities-pagination">
             <van-button size="small" :disabled="page <= 1" @click="handleGoToFirst">首页</van-button>
             <van-button size="small" :disabled="page <= 1" @click="handlePrevPage">上一页</van-button>
@@ -46,7 +46,7 @@
           </div>
         </van-tab>
         <van-tab title="实践" name="实践">
-          <ActivityList :activities="filteredActivities" :loading="loading" :has-more="false" :infinite="false" @refresh="refreshActivities" />
+          <ActivityList :activities="filteredActivities" :loading="loading" :has-more="false" :infinite="false" :data-ready="dataReady" :fallback-image="bingFallback" @refresh="refreshActivities" />
           <div v-if="totalPages > 1" class="activities-pagination">
             <van-button size="small" :disabled="page <= 1" @click="handleGoToFirst">首页</van-button>
             <van-button size="small" :disabled="page <= 1" @click="handlePrevPage">上一页</van-button>
@@ -67,7 +67,7 @@
           </div>
         </van-tab>
         <van-tab title="公益" name="公益">
-          <ActivityList :activities="filteredActivities" :loading="loading" :has-more="false" :infinite="false" @refresh="refreshActivities" />
+          <ActivityList :activities="filteredActivities" :loading="loading" :has-more="false" :infinite="false" :data-ready="dataReady" :fallback-image="bingFallback" @refresh="refreshActivities" />
           <div v-if="totalPages > 1" class="activities-pagination">
             <van-button size="small" :disabled="page <= 1" @click="handleGoToFirst">首页</van-button>
             <van-button size="small" :disabled="page <= 1" @click="handlePrevPage">上一页</van-button>
@@ -97,7 +97,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
 import { useUserStore } from '@/stores/user'
@@ -111,6 +111,7 @@ const activeTab = ref('赛事')
 const activities = ref([])
 const userRegistrations = ref([]) // 用户报名的活动ID列表
 const loading = ref(false)
+const dataReady = ref(false) // 活动与报名状态是否加载完成
 const page = ref(1)
 const pageSize = 10
 const totalActivities = ref(0)
@@ -131,6 +132,7 @@ const filterActions = filterOptions.map(opt => ({ text: opt.text, value: opt.val
 const currentFilterLabel = computed(() => {
   return filterOptions.find(opt => opt.value === categoryFilter.value)?.text || '全部活动'
 })
+const bingFallback = ref(localStorage.getItem('bingWallpaperToday') || '/demo-carousel-1.jpg')
 // 始终展示加载按钮（有数据时），便于手动翻页；用 hasMore 控制禁用/文案
 const showLoadMore = computed(() => filteredActivities.value.length > 0)
 
@@ -138,12 +140,20 @@ const showLoadMore = computed(() => filteredActivities.value.length > 0)
 const filteredActivities = computed(() => {
   return activities.value.map(activity => {
     const userRegistration = userRegistrations.value.find(reg => reg.id === activity.id)
+    // 如果订单已退款，视为未报名，允许重新报名
+    const isRefundedOrder = userRegistration?.order?.status === 'REFUNDED'
+    // 若没有订单但 registrationStatus 存在，也视作已报名（除非手动退款被删除订单的情况）
+    const hasRegistration = userRegistration && !isRefundedOrder
+    const registrationStatus = hasRegistration ? userRegistration?.registrationStatus : undefined
+    const registrationId = hasRegistration ? userRegistration?.registrationId : undefined
+    const registeredAt = hasRegistration ? userRegistration?.registeredAt : undefined
+    const order = hasRegistration ? (userRegistration?.order || null) : null
     return {
       ...activity,
-      registrationStatus: userRegistration?.registrationStatus,
-      registrationId: userRegistration?.registrationId,
-      registeredAt: userRegistration?.registeredAt,
-      order: userRegistration?.order || null
+      registrationStatus,
+      registrationId,
+      registeredAt,
+      order
     }
   })
 })
@@ -176,11 +186,9 @@ const fetchUserRegistrations = async () => {
 // 刷新活动列表
 const refreshActivities = async () => {
   page.value = 1
+  syncPageToUrl()
   hasMore.value = true
-  await Promise.all([
-    fetchActivities(false),
-    fetchUserRegistrations()
-  ])
+  await loadCurrentPage(false)
 }
 
 // 标签切换处理
@@ -190,13 +198,26 @@ const onTabChange = (name) => {
   // 更新URL查询参数
   router.replace({
     path: '/activities',
-    query: { tab: name }
+    query: { tab: name, page: 1 }
   })
   // 重置分页并加载新数据
   page.value = 1
   hasMore.value = true
   activities.value = []
-  fetchActivities()
+  loadCurrentPage()
+}
+
+const loadCurrentPage = async (useCache = true) => {
+  dataReady.value = false
+  await Promise.all([fetchActivities(!useCache), fetchUserRegistrations()])
+  dataReady.value = true
+}
+
+const syncPageToUrl = () => {
+  router.replace({
+    path: '/activities',
+    query: { ...route.query, tab: activeTab.value, page: page.value }
+  })
 }
 
 const totalPages = computed(() => Math.max(1, Math.ceil((totalActivities.value || 0) / pageSize)))
@@ -204,25 +225,29 @@ const totalPages = computed(() => Math.max(1, Math.ceil((totalActivities.value |
 const handlePrevPage = () => {
   if (page.value <= 1) return
   page.value -= 1
-  fetchActivities()
+  syncPageToUrl()
+  loadCurrentPage()
 }
 
 const handleNextPage = () => {
   if (page.value >= totalPages.value) return
   page.value += 1
-  fetchActivities()
+  syncPageToUrl()
+  loadCurrentPage()
 }
 
 const handleGoToFirst = () => {
   if (page.value === 1) return
   page.value = 1
-  fetchActivities()
+  syncPageToUrl()
+  loadCurrentPage()
 }
 
 const handleGoToLast = () => {
   if (page.value === totalPages.value) return
   page.value = totalPages.value
-  fetchActivities()
+  syncPageToUrl()
+  loadCurrentPage()
 }
 
 const handleJumpPage = () => {
@@ -234,7 +259,8 @@ const handleJumpPage = () => {
   const normalized = Math.min(Math.max(1, target), totalPages.value)
   if (normalized === page.value) return
   page.value = normalized
-  fetchActivities()
+  syncPageToUrl()
+  loadCurrentPage()
   jumpPageInput.value = ''
 }
 
@@ -306,18 +332,44 @@ onMounted(async () => {
   if (urlTab && ['赛事', '研学', '实践', '公益'].includes(urlTab)) {
     activeTab.value = urlTab
   }
+  const urlPage = parseInt(route.query.page, 10)
+  if (!Number.isNaN(urlPage) && urlPage > 0) {
+    page.value = urlPage
+  }
   console.log('页面初始化', { tab: activeTab.value })
   // 如果URL中没有指定标签页，使用默认的"赛事活动"
 
-  await Promise.all([
-    fetchActivities(),
-    fetchUserRegistrations()
-  ])
+  await loadCurrentPage()
 })
 const onSelectFilter = (action) => {
   categoryFilter.value = action.value
   showFilterPicker.value = false
 }
+
+// 路由参数变化时同步 tab/page 并刷新
+watch(
+  () => route.query.tab,
+  (newTab) => {
+    if (newTab && ['赛事', '研学', '实践', '公益'].includes(newTab) && newTab !== activeTab.value) {
+      activeTab.value = newTab
+      page.value = 1
+      syncPageToUrl()
+      loadCurrentPage()
+    }
+  }
+)
+
+watch(
+  () => route.query.page,
+  (newPage) => {
+    const parsed = parseInt(newPage, 10)
+    const normalized = Number.isNaN(parsed) || parsed < 1 ? 1 : parsed
+    if (normalized !== page.value) {
+      page.value = normalized
+      loadCurrentPage()
+    }
+  }
+)
 </script>
 
 <style scoped>
@@ -331,14 +383,6 @@ const onSelectFilter = (action) => {
 .activities-content {
   flex: 1;
 }
-.load-more-btn {
-  flex: 1;
-  margin-right: 8px;
-}
-.load-more-wrapper {
-  padding: 12px 16px 0;
-}
-
 .search-floating-btn {
   position: fixed;
   right: 16px;

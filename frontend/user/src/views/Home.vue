@@ -81,6 +81,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
 import { useUserStore } from '@/stores/user'
+import { prefetchBingToday, getBingCarouselCache, getBingFallback } from '@/utils/bingFallback'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -91,6 +92,37 @@ const activities = ref([])
 const swipeRef = ref(null)
 const autoplayDuration = ref(3000)
 let autoplayTimeout = null
+const defaultCarousels = [
+  {
+    id: 'demo-1',
+    title: '校园风光示例',
+    imageUrl: '/demo-carousel-1.jpg',
+    linkUrl: '#'
+  },
+  {
+    id: 'demo-2',
+    title: '研学活动示例',
+    imageUrl: '/demo-carousel-2.jpg',
+    linkUrl: '#'
+  },
+  {
+    id: 'demo-3',
+    title: '实践课堂示例',
+    imageUrl: '/demo-carousel-3.jpg',
+    linkUrl: '#'
+  }
+]
+
+// 获取 Bing 壁纸（通过后端代理避免 CORS），默认当天 n 张
+const fetchBingWallpapers = async (idx = 0, n = 4) => {
+  try {
+    const res = await axios.get('/api/external/bing-wallpapers', { params: { idx, n } })
+    return res.data?.data || []
+  } catch (error) {
+    console.error('获取 Bing 壁纸失败:', error)
+    return []
+  }
+}
 
 const pauseAutoplay = () => {
   if (autoplayTimeout) {
@@ -139,10 +171,74 @@ const formatActivityTime = (dateString) => {
 // 获取轮播图
 const fetchCarousels = async () => {
   try {
+    // 先用本地缓存的 Bing 轮播（含今日+前三天），避免重复请求
+    const cached = getBingCarouselCache()
+    if (cached.length > 0) {
+      carousels.value = cached
+      // 后台刷新，若成功则更新
+      prefetchBingToday().then(({ images }) => {
+        if (images && images.length > 0) {
+          carousels.value = images
+        }
+      })
+      return
+    }
+
+    // 快速预取今日，生成本地 2025xxxx.jpg 后立刻用来显示
+    const fastResult = await prefetchBingToday({ fast: true })
+    if (fastResult?.images?.length > 0) {
+      carousels.value = fastResult.images
+    } else if (fastResult?.today) {
+      carousels.value = [{
+        id: 'bing-today',
+        title: 'Bing 今日壁纸',
+        imageUrl: fastResult.today,
+        linkUrl: '#'
+      }]
+    } else {
+      // 最兜底使用远程/默认
+      const fallbackUrl = getBingFallback()
+      carousels.value = [{
+        id: 'bing-fallback',
+        title: 'Bing 今日壁纸',
+        imageUrl: fallbackUrl,
+        linkUrl: '#'
+      }]
+    }
+
+    // 请求后台轮播（自定义轮播），若有则使用
     const response = await axios.get('/api/carousels?isActive=true&limit=5')
-    carousels.value = response.data.data || []
+    const data = response.data.data || []
+    const withImages = data.filter(item => item.imageUrl)
+    if (withImages.length > 0) {
+      carousels.value = withImages
+    }
+
+    // 后台拉取完整 4 张，完成后替换
+    prefetchBingToday({ forceFull: true }).then(({ images }) => {
+      if (images && images.length > 0) {
+        carousels.value = images
+      }
+    })
+
+    if (!carousels.value || carousels.value.length === 0) {
+      carousels.value = defaultCarousels
+    }
   } catch (error) {
     console.error('获取轮播图失败:', error)
+    const { images, today } = await prefetchBingToday({ fast: true })
+    if (images && images.length > 0) {
+      carousels.value = images
+    } else if (today) {
+      carousels.value = [{
+        id: 'bing-today',
+        title: 'Bing 今日壁纸',
+        imageUrl: today,
+        linkUrl: '#'
+      }]
+    } else {
+      carousels.value = defaultCarousels
+    }
   }
 }
 

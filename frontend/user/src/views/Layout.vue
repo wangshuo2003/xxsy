@@ -1,5 +1,5 @@
 <template>
-  <div class="user-layout">
+  <div class="user-layout" :class="{ 'has-policies-pagination': isPoliciesPage }">
     <!-- 只在需要导航栏的页面显示 -->
     <van-nav-bar
       v-if="showNavBar"
@@ -8,11 +8,15 @@
       @click-left="handleGoBack"
     />
 
-<div class="user-content" ref="contentRef">
-  <router-view />
-</div>
+    <div class="user-main">
+      <div class="user-content" ref="contentRef" id="user-content">
+        <router-view />
+      </div>
+      <div id="policies-pagination-anchor" class="policies-pagination-anchor"></div>
+    </div>
+<div id="page-bottom-controls" class="page-bottom-controls"></div>
 
-    <van-tabbar v-model="active" route>
+    <van-tabbar v-model="active" active-color="#1989fa" @change="handleTabChange">
       <van-tabbar-item to="/home" icon="home-o">首页</van-tabbar-item>
       <van-tabbar-item to="/policies" icon="orders-o">通知</van-tabbar-item>
       <van-tabbar-item to="/activities" icon="medal-o">活动</van-tabbar-item>
@@ -30,8 +34,10 @@ const route = useRoute()
 const router = useRouter()
 
 const active = ref(0)
+const tabRoutes = ['/home', '/policies', '/activities', '/profile']
 const contentRef = ref(null)
 const currentRoute = computed(() => route)
+const isPoliciesPage = computed(() => route.path.startsWith('/policies'))
 
 // 需要显示导航栏的页面列表
 const showNavBar = computed(() => {
@@ -61,6 +67,31 @@ const handleGoBack = () => {
   }
 }
 
+const updateActiveByRoute = () => {
+  const path = route.path
+  if (path.startsWith('/home')) {
+    active.value = 0
+    return
+  }
+  if (path.startsWith('/policies') || path.startsWith('/policy')) {
+    active.value = 1
+    return
+  }
+  if (path.startsWith('/activities') || path.startsWith('/activity')) {
+    active.value = 2
+    return
+  }
+  // 默认归为“我的”标签，覆盖 orders/profile/balance 等
+  active.value = 3
+}
+
+const handleTabChange = (index) => {
+  const target = tabRoutes[index] || '/profile'
+  if (route.path !== target) {
+    router.push(target)
+  }
+}
+
 const scrollContentToTop = () => {
   nextTick(() => {
     const el = contentRef.value
@@ -80,11 +111,13 @@ const scrollContentToTop = () => {
 watch(
   () => route.fullPath,
   () => {
+    updateActiveByRoute()
     scrollContentToTop()
   }
 )
 
 onMounted(() => {
+  updateActiveByRoute()
   scrollContentToTop()
 })
 </script>
@@ -94,12 +127,69 @@ onMounted(() => {
   height: 100vh;
   display: flex;
   flex-direction: column;
+  --tabbar-height: 64px;
+}
+
+.user-main {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+  height: calc(100vh - var(--tabbar-height) - env(safe-area-inset-bottom));
 }
 
 .user-content {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   background-color: #f7f8fa;
+  padding: 0;
+}
+
+:deep(#user-content > div) {
+  display: contents;
+  padding: 0;
+}
+
+:deep(#user-content > div > div) {
+  padding: 0;
+  min-height: 100%;
+}
+
+:deep(#policies-pagination-anchor > div) {
+  position: static;
+  width: 100%;
+}
+
+.policies-pagination-anchor {
+  display: none;
+}
+
+.user-layout.has-policies-pagination .policies-pagination-anchor {
+  display: block;
+  min-height: 72px;
+  position: sticky;
+  bottom: calc(var(--tabbar-height) + env(safe-area-inset-bottom));
+  z-index: 1800;
+  background-color: #fff;
+  padding: 10px 16px;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.04);
+  display: flex;
+  align-items: center;
+}
+
+:deep(#policies-pagination-anchor > div) {
+  background-color: transparent;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+}
+
+.page-bottom-controls {
+  position: sticky;
+  bottom: calc(50px + env(safe-area-inset-bottom));
+  z-index: 2000;
 }
 
 .user-layout :deep(.van-tabbar__item) {

@@ -35,8 +35,10 @@
         image="search"
       />
     </div>
+  </div>
 
-    <!-- 分页 -->
+  <!-- 分页 -->
+  <Teleport v-if="isMounted" to="#policies-pagination-anchor">
     <div v-if="totalPages > 1" class="policies-pagination">
       <van-button size="small" :disabled="pagination.page <= 1" @click="handleGoToFirst">首页</van-button>
       <van-button size="small" :disabled="pagination.page <= 1" @click="handlePrevPage">上一页</van-button>
@@ -55,7 +57,7 @@
         <van-button size="small" type="primary" @click="handleJumpPage">跳转</van-button>
       </div>
     </div>
-  </div>
+  </Teleport>
 </template>
 
 <script setup>
@@ -64,13 +66,16 @@ import { useRouter } from 'vue-router'
 import { showToast, showSuccessToast } from 'vant'
 import axios from 'axios'
 import request from '@/api/request'
+import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
+const userStore = useUserStore()
 
 const policies = ref([])
 const loading = ref(false)
 const favoriteMap = ref({}) // 存储收藏状态和ID的映射
 const jumpPageInput = ref('')
+const isMounted = ref(false)
 
 const pagination = reactive({
   page: 1,
@@ -157,6 +162,8 @@ const handleJumpPage = () => {
 
 // 加载所有政策的收藏状态
 const loadFavoriteStatus = async () => {
+  if (!userStore.isLoggedIn || !userStore.token) return
+
   try {
     for (const policy of policies.value) {
       const response = await request.get('/favorites/check', {
@@ -177,6 +184,12 @@ const loadFavoriteStatus = async () => {
 }
 
 const toggleFavorite = async (policyId) => {
+  if (!userStore.isLoggedIn || !userStore.token) {
+    showToast('请先登录后再收藏')
+    router.push('/login')
+    return
+  }
+
   const key = `policy_${policyId}`
   const favoriteInfo = favoriteMap.value[key]
   const isFavorited = favoriteInfo?.isFavorited || false
@@ -217,6 +230,7 @@ const goToDetail = (policyId) => {
 }
 
 onMounted(() => {
+  isMounted.value = true
   fetchPolicies()
 })
 </script>

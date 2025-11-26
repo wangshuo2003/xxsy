@@ -9,7 +9,7 @@
       <div class="user-card">
         <div class="user-avatar">
           <van-image
-            :src="user.avatar || '/images/default-avatar.png'"
+            :src="user.avatar || bingFallback"
             round
             width="60"
             height="60"
@@ -206,10 +206,12 @@ import { ref, reactive, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast, showSuccessToast, showFailToast } from 'vant'
 import { useUserStore } from '@/stores/user'
+import { getBingFallback } from '@/utils/bingFallback'
 import request from '@/api/request'
 
 const router = useRouter()
 const userStore = useUserStore()
+const bingFallback = getBingFallback()
 
 const loading = ref(true)
 const user = ref(null)

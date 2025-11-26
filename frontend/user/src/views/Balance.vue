@@ -113,7 +113,9 @@
 
     <!-- 交易记录 -->
     <div class="transactions">
-      <h4>交易记录</h4>
+      <van-button class="transactions-link" type="primary" plain size="small" @click="$router.push('/balance/transactions')">
+        查看全部交易记录
+      </van-button>
       <div v-if="loading" class="loading">
         <van-loading size="24px" vertical>加载中...</van-loading>
       </div>
@@ -130,8 +132,8 @@
             <div class="transaction-desc">{{ transaction.description }}</div>
             <div class="transaction-time">{{ formatTime(transaction.createdAt) }}</div>
           </div>
-          <div :class="['transaction-amount', getAmountClass(transaction.type)]">
-            {{ formatAmount(transaction.amount) }}
+          <div :class="['transaction-amount', getAmountClass(transaction.type, transaction.amount)]">
+            {{ formatAmount(transaction.amount, transaction.type) }}
           </div>
         </div>
       </div>
@@ -239,6 +241,7 @@ const quickRechargeAmount = ref('')
 const quickGiftCardCode = ref('')
 const quickRecharging = ref(false)
 const quickPaying = ref('')
+const quickGiftCardBackup = ref('')
 
 // 礼品卡提示对话框
 const showGiftCardDialog = ref(false)
@@ -385,6 +388,7 @@ const handleQuickGiftCardRecharge = async () => {
     return
   }
 
+  quickGiftCardBackup.value = quickGiftCardCode.value
   try {
     quickRecharging.value = true
     const response = await request.post('/balance/recharge/gift-card', {
@@ -393,7 +397,7 @@ const handleQuickGiftCardRecharge = async () => {
 
     showSuccessToast(`礼品卡充值成功！充值金额：¥${response.amount}`)
     userBalance.value = response.balance
-    quickGiftCardCode.value = ''
+    // 成功后保留输入值，便于查看；如需清空可手动删除
 
     // 刷新交易记录
     await fetchTransactions()
@@ -413,7 +417,10 @@ const handleQuickGiftCardRecharge = async () => {
       giftCardMessage.value = errorData?.error || '礼品卡充值失败，请稍后重试'
       showGiftCardDialog.value = true
     }
+    // 失败时恢复输入内容
+    quickGiftCardCode.value = quickGiftCardBackup.value
   } finally {
+    quickGiftCardBackup.value = ''
     quickRecharging.value = false
   }
 }
@@ -489,14 +496,25 @@ const onPaymentMethodSelect = (action) => {
 }
 
 // 格式化金额
-const formatAmount = (amount) => {
-  const prefix = amount >= 0 ? '+' : ''
-  return `${prefix}¥${Math.abs(amount).toFixed(2)}`
+const formatAmount = (amount, type) => {
+  // 充值/退款显示 +，消费显示 -
+  let prefix = ''
+  if (type === 'PAYMENT') {
+    prefix = '-'
+  } else if (type === 'RECHARGE' || type === 'REFUND') {
+    prefix = '+'
+  } else {
+    prefix = amount >= 0 ? '+' : '-'
+  }
+  return `${prefix}${Math.abs(amount).toFixed(2)}`
 }
 
 // 获取金额样式类
-const getAmountClass = (type) => {
-  return type === 'RECHARGE' || type === 'REFUND' ? 'amount-positive' : 'amount-negative'
+const getAmountClass = (type, amount = 0) => {
+  if (type === 'RECHARGE' || type === 'GIFT_CARD') return 'amount-recharge amount-positive'
+  if (type === 'REFUND') return 'amount-positive'
+  if (type === 'PAYMENT') return 'amount-negative'
+  return amount >= 0 ? 'amount-positive' : 'amount-negative'
 }
 
 // 格式化时间
@@ -794,9 +812,9 @@ onMounted(() => {
   margin: 0 16px;
 }
 
-.transactions h4 {
+.transactions-link {
   margin-bottom: 16px;
-  color: #323233;
+  width: 100%;
 }
 
 .loading {
@@ -846,6 +864,10 @@ onMounted(() => {
 .transaction-amount {
   font-size: 16px;
   font-weight: 600;
+}
+
+.amount-recharge {
+  color: #07c160;
 }
 
 .amount-positive {

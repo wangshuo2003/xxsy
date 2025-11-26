@@ -26,10 +26,17 @@ request.interceptors.response.use(
   },
   (error) => {
     if (error.response) {
-      const { status, data } = error.response
+      const { status, data, config } = error.response
+      const hasToken = !!localStorage.getItem('token')
+      const suppressAuthToast = config?.suppressAuthToast
 
       switch (status) {
         case 401:
+          // 未携带 token 的 401 不弹过期提示，静默处理
+          if (!hasToken || suppressAuthToast) {
+            localStorage.removeItem('token')
+            break
+          }
           showToast({
             message: '登录已过期，请重新登录',
             type: 'fail'
@@ -57,7 +64,7 @@ request.interceptors.response.use(
           break
         default:
           showToast({
-            message: data.error || '请求失败',
+            message: data?.error || '请求失败',
             type: 'fail'
           })
       }

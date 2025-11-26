@@ -12,13 +12,9 @@
         v-if="!loading && filteredActivities.length === 0"
         description="未找到相关活动"
       />
-      <div class="load-more-wrapper" v-if="filteredActivities.length">
-        <van-button block type="primary" plain size="small" :loading="loading" :disabled="!hasMore" @click="loadMore">
-          {{ hasMore ? '加载更多' : '没有更多了' }}
-        </van-button>
-      </div>
     </div>
-
+  </div>
+  <Teleport v-if="hasBottomTarget" to="#page-bottom-controls">
     <div class="search-controls">
       <div class="search-row">
         <van-field
@@ -29,7 +25,7 @@
         />
         <van-popover
           v-model:show="showFilterPicker"
-          placement="top-start"
+          placement="top"
           trigger="click"
           :actions="filterActions"
           @select="onSelectFilter"
@@ -40,16 +36,36 @@
             </van-button>
           </template>
         </van-popover>
-        <van-button type="primary" class="search-button" @click="handleSearch">
-          搜索
-        </van-button>
       </div>
+    </div>
+  </Teleport>
+  <div v-else class="search-controls inline-fallback">
+    <div class="search-row">
+      <van-field
+        v-model="searchKeyword"
+        placeholder="输入关键字搜索活动"
+        clearable
+        @keyup.enter="handleSearch"
+      />
+      <van-popover
+        v-model:show="showFilterPicker"
+        placement="top"
+        trigger="click"
+        :actions="filterActions"
+        @select="onSelectFilter"
+      >
+        <template #reference>
+          <van-button class="filter-button" plain type="primary">
+            {{ currentFilterLabel }}
+          </van-button>
+        </template>
+      </van-popover>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
 import { useUserStore } from '@/stores/user'
@@ -68,6 +84,9 @@ const pageSize = 10
 const hasMore = ref(true)
 const userRegistrations = ref([])
 const showFilterPicker = ref(false)
+const isSyncingRoute = ref(false)
+const debounceTimer = ref(null)
+const hasBottomTarget = ref(false)
 
 const filterOptions = [
   { text: '全部活动', value: 'all' },
@@ -188,22 +207,34 @@ const refreshResults = async () => {
   ])
 }
 
-const handleSearch = () => {
-  router.replace({
+const handleSearch = async () => {
+  isSyncingRoute.value = true
+  await router.replace({
     path: '/activities/search',
     query: {
       keyword: searchKeyword.value || '',
       filter: categoryFilter.value || 'all'
     }
   })
+  isSyncingRoute.value = false
   page.value = 1
   hasMore.value = true
   fetchActivities()
 }
 
+const handleSearchDebounced = () => {
+  if (debounceTimer.value) {
+    clearTimeout(debounceTimer.value)
+  }
+  debounceTimer.value = setTimeout(() => {
+    handleSearch()
+  }, 300)
+}
+
 const onSelectFilter = (action) => {
   categoryFilter.value = action.value
   showFilterPicker.value = false
+  handleSearchDebounced()
 }
 
 watch(
@@ -213,11 +244,27 @@ watch(
     categoryFilter.value = newFilter || 'all'
     page.value = 1
     hasMore.value = true
-    fetchActivities()
+    if (!isSyncingRoute.value) {
+      fetchActivities()
+    }
   }
 )
 
+watch(
+  () => searchKeyword.value,
+  () => {
+    handleSearchDebounced()
+  }
+)
+
+onBeforeUnmount(() => {
+  if (debounceTimer.value) {
+    clearTimeout(debounceTimer.value)
+  }
+})
+
 onMounted(async () => {
+  hasBottomTarget.value = !!document.querySelector('#page-bottom-controls')
   await Promise.all([
     fetchActivities(),
     fetchUserRegistrations()
@@ -231,31 +278,67 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   background-color: #f7f8fa;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-bottom: calc(180px + env(safe-area-inset-bottom));
 }
 
 .results-content {
   flex: 1;
-  padding-bottom: 12px;
+  padding-bottom: calc(180px + env(safe-area-inset-bottom));
+  overflow-y: auto;
 }
 
 .search-controls {
   padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
   background-color: #fff;
   border-top: 1px solid #f0f0f0;
-  position: sticky;
-  bottom: calc(50px + env(safe-area-inset-bottom));
-  z-index: 5;
-  margin-top: auto;
+  box-sizing: border-box;
+  overflow: visible;
+  width: 100%;
+  max-width: 100vw;
 }
 
-.load-more-wrapper {
-  padding: 12px 16px 0;
+.search-controls :deep(.van-field__control) {
+  caret-color: auto;
+}
+
+.inline-fallback {
+  position: sticky;
+  bottom: calc(50px + env(safe-area-inset-bottom));
+  z-index: 3000;
 }
 
 .search-row {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: nowrap;
+  width: 100%;
+}
+
+.search-controls :deep(.van-popover__content) {
+  max-height: none;
+  overflow: visible;
+  scrollbar-width: none;
+}
+
+.search-controls :deep(.van-popover__content::-webkit-scrollbar) {
+  width: 0;
+  height: 0;
+}
+
+.search-controls :deep(.van-popover) {
+  overflow: visible;
+}
+
+:global(body > .van-popover) {
+  overflow: visible !important;
+}
+
+:global(html),
+:global(body) {
+  overflow-x: hidden;
 }
 
 .page-hint {
@@ -269,10 +352,6 @@ onMounted(async () => {
   background-color: #f7f8fa;
   border-radius: 8px;
   padding: 0 8px;
-}
-
-.search-button {
-  flex-shrink: 0;
 }
 
 .filter-button {

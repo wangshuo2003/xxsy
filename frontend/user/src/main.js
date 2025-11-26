@@ -6,6 +6,7 @@ import App from './App.vue'
 import router from './router'
 import './style.css'
 import axios from 'axios'
+import { prefetchBingToday } from './utils/bingFallback'
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -46,5 +47,10 @@ const commonToastOptions = { className: 'global-toast' }
 setToastDefaultOptions(commonToastOptions)
 setToastDefaultOptions('success', { className: 'global-toast global-toast-success' })
 setToastDefaultOptions('fail', commonToastOptions)
+
+// 优先下载今日 Bing 壁纸，随后后台拉取前三天，减少首屏等待
+prefetchBingToday({ fast: true }).finally(() => {
+  prefetchBingToday({ forceFull: true }).catch(() => {})
+})
 
 app.mount('#app')

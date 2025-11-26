@@ -52,9 +52,11 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast, showSuccessToast } from 'vant'
 import request from '@/api/request'
+import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 
 const loading = ref(true)
 const policy = ref(null)
@@ -88,6 +90,8 @@ const downloadFile = () => {
 
 // 检查收藏状态
 const checkFavoriteStatus = async () => {
+  if (!userStore.isLoggedIn || !userStore.token) return
+
   try {
     if (policy.value) {
       const response = await request.get('/favorites/check', {
@@ -106,6 +110,12 @@ const checkFavoriteStatus = async () => {
 // 切换收藏状态
 const toggleFavorite = async () => {
   if (!policy.value) return
+
+  if (!userStore.isLoggedIn || !userStore.token) {
+    showToast('请先登录后再收藏')
+    router.push('/login')
+    return
+  }
 
   favoriteLoading.value = true
   try {

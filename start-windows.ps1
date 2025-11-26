@@ -7,6 +7,8 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $scriptDir
 $projectName = "xxsy"
 $env:COMPOSE_PROJECT_NAME = $projectName
+$userDist = Join-Path $scriptDir "frontend/user/dist"
+$adminDist = Join-Path $scriptDir "frontend/admin/dist"
 
 function Test-DockerEngine {
     try {
@@ -40,6 +42,10 @@ try {
     Write-Error $_.Exception.Message
     exit 1
 }
+
+# 清理前端构建产物，避免旧的 dist 干扰
+Write-Host "[$platform] 清理前端构建产物..." -ForegroundColor Cyan
+Remove-Item -Recurse -Force $userDist, $adminDist -ErrorAction SilentlyContinue
 
 if (-not (Test-DockerEngine)) {
     Write-Host "Docker 未运行，正在尝试启动 Docker Desktop..."

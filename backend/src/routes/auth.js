@@ -3,9 +3,60 @@ const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 const { body, validationResult } = require('express-validator')
 const prisma = require('../config/database')
+const crypto = require('crypto')
 const { authMiddleware } = require('../middleware/auth')
 
 const router = express.Router()
+
+// 简单的内存验证码存储（生产环境建议改为缓存/持久化/图形验证码服务）
+const captchaStore = new Map()
+const CAPTCHA_EXPIRE_MS = 5 * 60 * 1000
+
+const createCaptcha = () => {
+  const code = String(Math.floor(Math.random() * 10000)).padStart(4, '0')
+  const id = crypto.randomUUID()
+  const expiresAt = Date.now() + CAPTCHA_EXPIRE_MS
+  captchaStore.set(id, { code, expiresAt })
+  // 自动过期清理
+  setTimeout(() => captchaStore.delete(id), CAPTCHA_EXPIRE_MS + 1000)
+  return { id, code, expiresIn: CAPTCHA_EXPIRE_MS }
+}
+
+// 获取验证码元信息，返回图片访问路径，前端无需接触明文
+router.get('/captcha', (req, res) => {
+  try {
+    const captcha = createCaptcha()
+    res.json({
+      id: captcha.id,
+      imageUrl: `/api/auth/captcha/image/${captcha.id}`,
+      expiresIn: CAPTCHA_EXPIRE_MS
+    })
+  } catch (e) {
+    console.error('生成验证码失败:', e)
+    res.status(500).json({ error: '生成验证码失败' })
+  }
+})
+
+// 根据 ID 返回验证码图片
+router.get('/captcha/image/:id', (req, res) => {
+  try {
+    const id = req.params.id
+    const record = captchaStore.get(id)
+    if (!record || record.expiresAt < Date.now()) {
+      return res.status(404).send('captcha expired')
+    }
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40" viewBox="0 0 120 40">
+      <rect width="120" height="40" fill="#f7f8fa" />
+      <text x="12" y="28" font-size="24" font-family="Arial" fill="#333">${record.code}</text>
+    </svg>`
+    res.setHeader('Content-Type', 'image/svg+xml')
+    res.setHeader('Cache-Control', 'no-store')
+    res.send(svg)
+  } catch (e) {
+    console.error('获取验证码图片失败:', e)
+    res.status(500).send('error')
+  }
+})
 
 // 注册
 router.post('/register', [
@@ -86,7 +137,9 @@ router.post('/register', [
 // 登录
 router.post('/login', [
   body('username').notEmpty().withMessage('用户名不能为空'),
-  body('password').notEmpty().withMessage('密码不能为空')
+  body('password').notEmpty().withMessage('密码不能为空'),
+  body('captchaId').optional().isString(),
+  body('captchaCode').optional().isString()
 ], async (req, res) => {
   try {
     const errors = validationResult(req)
@@ -94,16 +147,20 @@ router.post('/login', [
       return res.status(400).json({ errors: errors.array() })
     }
 
-    const { username, password } = req.body
+    const { username, password, captchaId, captchaCode } = req.body
 
-    // 查找用户
-    const user = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { username },
-          { phone: username }
-        ]
+    // 如果传递了验证码，则进行校验
+    if (captchaId || captchaCode) {
+      const record = captchaStore.get(captchaId)
+      if (!record || record.expiresAt < Date.now() || !captchaCode || record.code.toLowerCase() !== captchaCode.toLowerCase()) {
+        return res.status(400).json({ error: '验证码错误或已过期' })
       }
+      captchaStore.delete(captchaId)
+    }
+
+    // 仅按用户名查找（不再允许手机号登录）
+    const user = await prisma.user.findUnique({
+      where: { username }
     })
 
     if (!user) {

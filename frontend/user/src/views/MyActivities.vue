@@ -19,7 +19,7 @@
           :key="activity.id"
           class="activity-card"
           :title="activity.name"
-          :thumb="activity.coverImage || '/default-activity.jpg'"
+          :thumb="activity.coverImage || bingFallback"
           @click="goToDetail(activity.id)"
         >
           <template #tags>
@@ -120,9 +120,11 @@ import { useRouter } from 'vue-router'
 import { showToast, showConfirmDialog } from 'vant'
 import axios from 'axios'
 import { useUserStore } from '@/stores/user'
+import { getBingFallback } from '@/utils/bingFallback'
 
 const router = useRouter()
 const userStore = useUserStore()
+const bingFallback = getBingFallback()
 
 const activeTab = ref('all')
 const activities = ref([])
