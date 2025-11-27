@@ -98,6 +98,7 @@ app.use('/api/gift-cards', require('./routes/giftCards'))
 app.use('/api/base-coupons', require('./routes/baseCoupons'))
 app.use('/api/refunds', require('./routes/refunds'))
 app.use('/api/external', require('./routes/external'))
+app.use('/api/messages', authMiddleware, require('./routes/messages'))
 
 // 健康检查
 app.get('/health', (req, res) => {

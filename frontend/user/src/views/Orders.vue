@@ -2,7 +2,7 @@
   <div class="orders-page">
     <van-nav-bar title="我的订单" left-arrow @click-left="handleGoBack" />
 
-    <div class="status-tabs">
+    <div class="status-tabs" style="padding: 5px;">
       <div
         v-for="tab in statusTabs"
         :key="tab.value"
@@ -393,9 +393,13 @@ onMounted(() => {
 .status-tabs {
   display: flex;
   background: white;
-  padding: 12px 16px;
+  padding: 5px;
   gap: 12px;
   border-bottom: 1px solid #f0f0f0;
+}
+
+:global(#user-content > div > div.status-tabs) {
+  padding: 5px !important;
 }
 
 .status-tab {

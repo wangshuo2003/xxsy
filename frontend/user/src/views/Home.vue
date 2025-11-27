@@ -14,6 +14,65 @@
       <van-button class="swipe-nav next" @click="next" round icon="arrow" />
     </div>
 
+    <!-- 消息 -->
+    <div class="section">
+      <div class="section-header">
+        <h3>消息</h3>
+        <van-button plain type="primary" size="small" @click="goToMessages">查看全部</van-button>
+      </div>
+
+      <div v-if="hasMessages">
+        <van-list>
+          <van-cell
+            v-if="latestCertificate"
+            icon="certificate"
+            is-link
+            @click="goToCertificate(latestCertificate.id)"
+          >
+            <template #title>
+              <div class="activity-title">最新证书：{{ latestCertificate.title }}</div>
+            </template>
+            <template #label>
+              <div class="policy-time">{{ formatDate(latestCertificate.issueDate || latestCertificate.createdAt) }}</div>
+            </template>
+          </van-cell>
+
+          <van-cell
+            v-for="order in ordersSummary"
+            :key="order.id"
+            icon="orders-o"
+            is-link
+            @click="goToOrders"
+          >
+            <template #title>
+              <div class="activity-title">订单 {{ order.orderNo }}</div>
+            </template>
+            <template #label>
+              <div class="policy-time">{{ mapOrderStatus(order.status) }} · {{ formatDate(order.updatedAt || order.createdAt) }}</div>
+            </template>
+          </van-cell>
+
+          <van-cell
+            v-for="chat in chats"
+            :key="chat.id"
+            icon="chat-o"
+            is-link
+            @click="goToChat(chat)"
+          >
+            <template #title>
+              <div class="activity-title">{{ chat.title }}</div>
+            </template>
+            <template #label>
+              <div class="policy-time">{{ chat.desc }}</div>
+            </template>
+          </van-cell>
+        </van-list>
+      </div>
+      <div v-else class="empty-state">
+        <van-empty description="暂无新消息" />
+      </div>
+    </div>
+
     <!-- 最新活动 -->
     <div class="section">
       <div class="section-header">
@@ -77,7 +136,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
 import { useUserStore } from '@/stores/user'
@@ -88,6 +147,12 @@ const userStore = useUserStore()
 const carousels = ref([])
 const policies = ref([])
 const certificates = ref([])
+const ordersSummary = ref([])
+const chats = ref([
+  { id: 'super-admin', title: '与超级管理员聊天', desc: '反馈问题或获取帮助' },
+  { id: 'base-admin', title: '与基地管理员聊天', desc: '咨询基地活动与安排' },
+  { id: 'other-users', title: '与其他用户聊天', desc: '与同学/同伴交流' }
+])
 const activities = ref([])
 const swipeRef = ref(null)
 const autoplayDuration = ref(3000)
@@ -252,6 +317,21 @@ const fetchPolicies = async () => {
   }
 }
 
+// 获取最新订单摘要
+const fetchOrdersSummary = async () => {
+  try {
+    const response = await axios.get('/api/orders', {
+      params: { limit: 3, sortBy: 'updatedAt' },
+      headers: userStore.token ? { Authorization: `Bearer ${userStore.token}` } : {}
+    })
+    const list = Array.isArray(response?.data?.data) ? response.data.data : []
+    ordersSummary.value = list
+  } catch (error) {
+    console.error('获取订单摘要失败:', error)
+    ordersSummary.value = []
+  }
+}
+
 // 获取用户证书
 const fetchCertificates = async () => {
   if (!userStore.isLoggedIn) {
@@ -288,19 +368,48 @@ const goToCertificate = (id) => {
   router.push(`/achievements?id=${id}`)
 }
 
+const goToMessages = () => {
+  router.push('/messages')
+}
+
+const goToOrders = () => {
+  router.push('/orders')
+}
+
+const goToChat = (chat) => {
+  router.push({ path: '/messages', query: { chatWith: chat.id } })
+}
+
+const mapOrderStatus = (status) => {
+  const statusMap = {
+    'PENDING': '待支付',
+    'PAID': '已支付',
+    'CANCELLED': '已取消',
+    'REFUNDING': '退款处理中',
+    'REFUNDED': '已退款'
+  }
+  return statusMap[status] || status || '订单更新'
+}
+
+const latestCertificate = computed(() => certificates.value?.[0] || null)
+const hasMessages = computed(() => {
+  return Boolean(latestCertificate.value) || ordersSummary.value.length > 0 || chats.value.length > 0
+})
+
 onMounted(() => {
   fetchCarousels()
   fetchActivities()
   fetchPolicies()
   fetchCertificates()
+  fetchOrdersSummary()
 })
 </script>
 
 <style scoped>
 .home {
   background-color: #f7f8fa;
-  min-height: 100vh;
-  padding-bottom: 80px;
+  min-height: auto;
+  padding-bottom: 16px;
 }
 
 .swipe-container {
@@ -322,8 +431,8 @@ onMounted(() => {
   top: 50%;
   transform: translateY(-50%);
   z-index: 2;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   background-color: rgba(0, 0, 0, 0.3);
   border: none;
   color: white;
@@ -365,7 +474,8 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  padding: 15px 15px 0px 15px;
+  
 }
 
 .section-header h3 {

@@ -40,6 +40,12 @@ model User {
   UserHistory_User    UserHistory[]        @relation("UserHistory_userIdToUser")
   UserHistory_changed UserHistory[]        @relation("UserHistory_changedByToUser")
   adminOfBases        Base[]               @relation("BaseAdmins")
+  contactsA           Contact[]            @relation("ContactUserA")
+  contactsB           Contact[]            @relation("ContactUserB")
+  sentFriendRequests  FriendRequest[]      @relation("FriendRequestFrom")
+  receivedFriendRequests FriendRequest[]   @relation("FriendRequestTo")
+  sentMessages        ChatMessage[]        @relation("ChatFromUser")
+  receivedMessages    ChatMessage[]        @relation("ChatToUser")
 
   @@map("users")
 }
@@ -284,6 +290,53 @@ enum OrderStatus {
   CANCELLED
   REFUNDING
   REFUNDED
+}
+
+model Contact {
+  id         Int      @id @default(autoincrement())
+  userA      Int
+  userB      Int
+  status     String   @default("ACTIVE")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user1      User     @relation("ContactUserA", fields: [userA], references: [id], onDelete: Cascade)
+  user2      User     @relation("ContactUserB", fields: [userB], references: [id], onDelete: Cascade)
+  messages   ChatMessage[]
+
+  @@unique([userA, userB])
+  @@map("contacts")
+}
+
+model FriendRequest {
+  id         Int      @id @default(autoincrement())
+  fromId     Int
+  toId       Int
+  message    String?  @db.Text
+  status     String   @default("PENDING")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  fromUser   User     @relation("FriendRequestFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  toUser     User     @relation("FriendRequestTo", fields: [toId], references: [id], onDelete: Cascade)
+
+  @@index([toId], map: "friend_requests_toId_idx")
+  @@index([fromId], map: "friend_requests_fromId_idx")
+  @@map("friend_requests")
+}
+
+model ChatMessage {
+  id         Int      @id @default(autoincrement())
+  contactId  Int
+  fromId     Int
+  toId       Int
+  content    String   @db.Text
+  createdAt  DateTime @default(now())
+
+  contact    Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  fromUser   User     @relation("ChatFromUser", fields: [fromId], references: [id], onDelete: Cascade)
+  toUser     User     @relation("ChatToUser", fields: [toId], references: [id], onDelete: Cascade)
+
+  @@index([contactId], map: "chat_messages_contactId_idx")
+  @@map("chat_messages")
 }
 
 enum ServiceEventType {

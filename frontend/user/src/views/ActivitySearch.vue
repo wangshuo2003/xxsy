@@ -1,7 +1,32 @@
 <template>
   <div class="activity-search-page">
     <div class="results-content">
+      <div class="search-controls sticky-top">
+        <div class="search-row">
+          <van-field
+            v-model="searchKeyword"
+            placeholder="输入关键字搜索活动"
+            clearable
+            @keyup.enter="handleSearch"
+          />
+          <van-popover
+            v-model:show="showFilterPicker"
+            placement="bottom"
+            trigger="click"
+            :actions="filterActions"
+            @select="onSelectFilter"
+          >
+            <template #reference>
+              <van-button class="filter-button" plain type="primary">
+                {{ currentFilterLabel }}
+              </van-button>
+            </template>
+          </van-popover>
+        </div>
+      </div>
+
       <ActivityList
+        v-if="loading || filteredActivities.length > 0"
         :activities="filteredActivities"
         :loading="loading"
         :has-more="hasMore"
@@ -9,57 +34,9 @@
         @refresh="refreshResults"
       />
       <van-empty
-        v-if="!loading && filteredActivities.length === 0"
+        v-else
         description="未找到相关活动"
       />
-    </div>
-  </div>
-  <Teleport v-if="hasBottomTarget" to="#page-bottom-controls">
-    <div class="search-controls">
-      <div class="search-row">
-        <van-field
-          v-model="searchKeyword"
-          placeholder="输入关键字搜索活动"
-          clearable
-          @keyup.enter="handleSearch"
-        />
-        <van-popover
-          v-model:show="showFilterPicker"
-          placement="top"
-          trigger="click"
-          :actions="filterActions"
-          @select="onSelectFilter"
-        >
-          <template #reference>
-            <van-button class="filter-button" plain type="primary">
-              {{ currentFilterLabel }}
-            </van-button>
-          </template>
-        </van-popover>
-      </div>
-    </div>
-  </Teleport>
-  <div v-else class="search-controls inline-fallback">
-    <div class="search-row">
-      <van-field
-        v-model="searchKeyword"
-        placeholder="输入关键字搜索活动"
-        clearable
-        @keyup.enter="handleSearch"
-      />
-      <van-popover
-        v-model:show="showFilterPicker"
-        placement="top"
-        trigger="click"
-        :actions="filterActions"
-        @select="onSelectFilter"
-      >
-        <template #reference>
-          <van-button class="filter-button" plain type="primary">
-            {{ currentFilterLabel }}
-          </van-button>
-        </template>
-      </van-popover>
     </div>
   </div>
 </template>
@@ -86,7 +63,6 @@ const userRegistrations = ref([])
 const showFilterPicker = ref(false)
 const isSyncingRoute = ref(false)
 const debounceTimer = ref(null)
-const hasBottomTarget = ref(false)
 
 const filterOptions = [
   { text: '全部活动', value: 'all' },
@@ -264,7 +240,6 @@ onBeforeUnmount(() => {
 })
 
 onMounted(async () => {
-  hasBottomTarget.value = !!document.querySelector('#page-bottom-controls')
   await Promise.all([
     fetchActivities(),
     fetchUserRegistrations()
@@ -274,29 +249,35 @@ onMounted(async () => {
 
 <style scoped>
 .activity-search-page {
-  min-height: 100vh;
+  height: 100%;
   display: flex;
   flex-direction: column;
   background-color: #f7f8fa;
-  overflow-x: hidden;
-  overflow-y: auto;
-  padding-bottom: calc(180px + env(safe-area-inset-bottom));
+  overflow: hidden;
 }
 
 .results-content {
   flex: 1;
-  padding-bottom: calc(180px + env(safe-area-inset-bottom));
+  padding-bottom: calc(64px + env(safe-area-inset-bottom));
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .search-controls {
-  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  padding: 12px 16px;
   background-color: #fff;
   border-top: 1px solid #f0f0f0;
   box-sizing: border-box;
   overflow: visible;
   width: 100%;
   max-width: 100vw;
+}
+
+.sticky-top {
+  position: sticky;
+  top: 0;
+  z-index: 3000;
+  border-bottom: 1px solid #f0f0f0;
 }
 
 .search-controls :deep(.van-field__control) {

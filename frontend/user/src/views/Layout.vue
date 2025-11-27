@@ -1,5 +1,12 @@
 <template>
-  <div class="user-layout" :class="{ 'has-policies-pagination': isPoliciesPage }">
+  <div
+    class="user-layout"
+    :class="{
+      'has-policies-pagination': isPoliciesPage,
+      'has-nav-bar': showNavBar,
+      'no-tabbar': !showTabbar
+    }"
+  >
     <!-- 只在需要导航栏的页面显示 -->
     <van-nav-bar
       v-if="showNavBar"
@@ -8,15 +15,16 @@
       @click-left="handleGoBack"
     />
 
+    <div id="page-bottom-controls" class="page-bottom-controls"></div>
+
     <div class="user-main">
       <div class="user-content" ref="contentRef" id="user-content">
         <router-view />
       </div>
       <div id="policies-pagination-anchor" class="policies-pagination-anchor"></div>
     </div>
-<div id="page-bottom-controls" class="page-bottom-controls"></div>
 
-    <van-tabbar v-model="active" active-color="#1989fa" @change="handleTabChange">
+    <van-tabbar v-if="showTabbar" v-model="active" active-color="#1989fa" @change="handleTabChange">
       <van-tabbar-item to="/home" icon="home-o">首页</van-tabbar-item>
       <van-tabbar-item to="/policies" icon="orders-o">通知</van-tabbar-item>
       <van-tabbar-item to="/activities" icon="medal-o">活动</van-tabbar-item>
@@ -38,6 +46,8 @@ const tabRoutes = ['/home', '/policies', '/activities', '/profile']
 const contentRef = ref(null)
 const currentRoute = computed(() => route)
 const isPoliciesPage = computed(() => route.path.startsWith('/policies'))
+const hideTabbarPages = ['/messages', '/chat', '/contacts/add']
+const showTabbar = computed(() => !hideTabbarPages.some(p => route.path.startsWith(p)))
 
 // 需要显示导航栏的页面列表
 const showNavBar = computed(() => {
@@ -127,15 +137,28 @@ onMounted(() => {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  --tabbar-height: 64px;
+  --tabbar-height: 60px;
+  --navbar-height: 46px;
 }
 
 .user-main {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   min-height: 0;
   height: calc(100vh - var(--tabbar-height) - env(safe-area-inset-bottom));
+}
+
+.user-layout.has-nav-bar .user-main {
+  height: calc(100vh - var(--tabbar-height) - var(--navbar-height) - env(safe-area-inset-bottom));
+}
+
+.user-layout.no-tabbar .user-main {
+  height: calc(100vh - env(safe-area-inset-bottom));
+}
+
+.user-layout.no-tabbar.has-nav-bar .user-main {
+  height: calc(100vh - var(--navbar-height) - env(safe-area-inset-bottom));
 }
 
 .user-content {
@@ -154,7 +177,8 @@ onMounted(() => {
 
 :deep(#user-content > div > div) {
   padding: 0;
-  min-height: 100%;
+  min-height: auto;
+  height: auto;
 }
 
 :deep(#policies-pagination-anchor > div) {
@@ -188,11 +212,39 @@ onMounted(() => {
 
 .page-bottom-controls {
   position: sticky;
-  bottom: calc(50px + env(safe-area-inset-bottom));
+  bottom: calc(var(--tabbar-height) + env(safe-area-inset-bottom));
   z-index: 2000;
 }
 
 .user-layout :deep(.van-tabbar__item) {
   font-weight: 600 !important;
+}
+
+:global(html, body) {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+:global(body) {
+  overflow: hidden !important;
+}
+
+:global(#app) {
+  height: 100vh;
+}
+
+:global(.van-tabbar) {
+  height: var(--tabbar-height);
+  padding-bottom: env(safe-area-inset-bottom);
+  box-sizing: content-box;
+}
+
+:deep(#user-content > div > div.van-nav-bar.van-hairline--bottom) {
+  border-bottom: none !important;
+}
+
+:deep(#user-content > div > div.van-nav-bar.van-hairline--bottom)::after {
+  display: none !important;
 }
 </style>

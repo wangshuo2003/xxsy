@@ -157,6 +157,40 @@ const routes = [
         name: 'Orders',
         component: () => import('@/views/Orders.vue'),
         meta: { title: '我的订单', requiresAuth: true }
+      },
+      {
+        path: '/chat',
+        name: 'Chat',
+        component: () => import('@/views/Chat.vue'),
+        meta: { title: '聊天', requiresAuth: true }
+      },
+      {
+        path: '/contacts/add',
+        name: 'AddContact',
+        component: () => import('@/views/AddContact.vue'),
+        meta: { title: '添加联系人', requiresAuth: true }
+      },
+      {
+        path: '/messages/contacts/requests',
+        name: 'ContactRequests',
+        component: () => import('@/views/ContactRequests.vue'),
+        meta: { title: '新联系人申请', requiresAuth: true }
+      },
+      {
+        path: '/contacts/requests',
+        redirect: '/messages/contacts/requests'
+      },
+      {
+        path: '/messages',
+        name: 'Messages',
+        component: () => import('@/views/Messages.vue'),
+        meta: { title: '消息', requiresAuth: true }
+      },
+      {
+        path: '/messages/contacts',
+        name: 'MessagesContacts',
+        component: () => import('@/views/Messages.vue'),
+        meta: { title: '联系人', requiresAuth: true }
       }
     ]
   }
