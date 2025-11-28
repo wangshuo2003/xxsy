@@ -1,12 +1,15 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import { Button, NavBar, Tabbar, TabbarItem, Cell, CellGroup, Form, Field, Grid, GridItem, Card, Image, Divider, Tag, Swipe, SwipeItem, Loading, Dialog, Icon, Collapse, CollapseItem, setToastDefaultOptions } from 'vant'
+import { Button, NavBar, Tabbar, TabbarItem, Cell, CellGroup, Form, Field, Grid, GridItem, Card, Image, Divider, Tag, Swipe, SwipeItem, Loading, Dialog, Icon, Collapse, CollapseItem, ActionSheet, setToastDefaultOptions } from 'vant'
 import 'vant/lib/index.css'
 import App from './App.vue'
 import router from './router'
 import './style.css'
 import axios from 'axios'
 import { prefetchBingToday } from './utils/bingFallback'
+
+// 每次构建带上构建标识，强制生成新入口 hash，避免浏览器误用旧缓存
+const __BUILD_ID__ = 'tabbar-2025-11-27-02'
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -41,6 +44,7 @@ app.use(Dialog)
 app.use(Icon)
 app.use(Collapse)
 app.use(CollapseItem)
+app.use(ActionSheet)
 
 const commonToastOptions = { className: 'global-toast' }
 

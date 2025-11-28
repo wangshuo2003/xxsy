@@ -4,14 +4,32 @@ const { PrismaClient } = require('@prisma/client')
 const router = express.Router()
 const prisma = new PrismaClient()
 
-const ensureContact = async (userAId, userBId) => {
+const ensureContact = async (userAId, userBId, opts = {}) => {
+  const { forceActive = false } = opts
   const a = Math.min(userAId, userBId)
   const b = Math.max(userAId, userBId)
   let contact = await prisma.contact.findFirst({ where: { userA: a, userB: b } })
   if (!contact) {
-    contact = await prisma.contact.create({ data: { userA: a, userB: b } })
+    contact = await prisma.contact.create({ data: { userA: a, userB: b, status: forceActive ? 'ACTIVE' : 'ACTIVE' } })
+  } else if (forceActive && contact.status !== 'ACTIVE') {
+    contact = await prisma.contact.update({ where: { id: contact.id }, data: { status: 'ACTIVE', updatedAt: new Date() } })
   }
   return contact
+}
+
+const whoBlocked = (contact) => {
+  if (!contact) return null
+  if (contact.status === 'BLOCKED_BY_A') return contact.userA
+  if (contact.status === 'BLOCKED_BY_B') return contact.userB
+  return null
+}
+
+const computeBlockState = (contact, userId) => {
+  const blocker = whoBlocked(contact)
+  return {
+    blockedByMe: blocker === userId,
+    blockedMe: blocker && blocker !== userId
+  }
 }
 
 // 发起好友申请
@@ -22,14 +40,17 @@ router.post('/requests', async (req, res) => {
   const target = await prisma.user.findUnique({ where: { username: toUser } })
   if (!target) return res.status(404).json({ error: '该用户不存在' })
 
-  const existing = await prisma.friendRequest.findFirst({
+  // 若对方已拉黑当前用户，直接拒绝
+  const contact = await prisma.contact.findFirst({
     where: {
-      fromId: req.user.id,
-      toId: target.id,
-      status: 'PENDING'
+      OR: [
+        { userA: req.user.id, userB: target.id },
+        { userA: target.id, userB: req.user.id }
+      ]
     }
   })
-  if (existing) return res.json({ ok: true, request: existing })
+  const { blockedMe } = computeBlockState(contact, req.user.id)
+  if (blockedMe) return res.status(403).json({ error: '被拉黑' })
 
   const request = await prisma.friendRequest.create({
     data: {
@@ -79,7 +100,9 @@ router.post('/requests/:id/action', async (req, res) => {
   const updated = await prisma.friendRequest.update({ where: { id }, data: { status } })
 
   if (status === 'ACCEPTED') {
-    await ensureContact(fr.fromId, fr.toId)
+    const contact = await ensureContact(fr.fromId, fr.toId, { forceActive: true })
+    // 更新时间，确保双方列表立即显示
+    await prisma.contact.update({ where: { id: contact.id }, data: { updatedAt: new Date(), status: 'ACTIVE' } })
   }
 
   res.json({ ok: true, request: updated })
@@ -98,7 +121,10 @@ router.post('/contacts', async (req, res) => {
 // 联系人列表
 router.get('/contacts', async (req, res) => {
   const list = await prisma.contact.findMany({
-    where: { OR: [{ userA: req.user.id }, { userB: req.user.id }] },
+    where: {
+      status: 'ACTIVE',
+      OR: [{ userA: req.user.id }, { userB: req.user.id }]
+    },
     orderBy: { updatedAt: 'desc' }
   })
   const contacts = await Promise.all(
@@ -115,15 +141,74 @@ router.get('/contacts', async (req, res) => {
   res.json({ data: contacts })
 })
 
-// 拉取聊天记录
+// 删除联系人，可选择是否保留聊天记录
+router.delete('/contacts/:username', async (req, res) => {
+  const keepMessages = ['true', '1', 'yes', 'on'].includes(String(req.query.keepMessages).toLowerCase())
+
+  const other = await prisma.user.findUnique({ where: { username: req.params.username } })
+  if (!other) return res.json({ ok: true, keepMessages, note: '联系人已不存在' })
+
+  const contact = await prisma.contact.findFirst({
+    where: {
+      OR: [
+        { userA: req.user.id, userB: other.id },
+        { userA: other.id, userB: req.user.id }
+      ]
+    }
+  })
+
+  if (!contact) return res.json({ ok: true, keepMessages, note: '联系记录已不存在' })
+
+  if (keepMessages) {
+    await prisma.contact.update({ where: { id: contact.id }, data: { status: 'DELETED', updatedAt: new Date() } })
+  } else {
+    await prisma.chatMessage.deleteMany({ where: { contactId: contact.id } })
+    await prisma.contact.delete({ where: { id: contact.id } })
+  }
+
+  res.json({ ok: true, keepMessages })
+})
+
+// 拉取聊天记录：若联系人已被删除，仍可按双方用户 ID 拉取历史消息
 router.get('/contacts/:username/messages', async (req, res) => {
   const other = await prisma.user.findUnique({ where: { username: req.params.username } })
   if (!other) return res.status(404).json({ error: '联系人不存在' })
-  const contact = await ensureContact(req.user.id, other.id)
-  const msgs = await prisma.chatMessage.findMany({
-    where: { contactId: contact.id },
-    orderBy: { createdAt: 'asc' }
+
+  let contact = await prisma.contact.findFirst({
+    where: {
+      OR: [
+        { userA: req.user.id, userB: other.id },
+        { userA: other.id, userB: req.user.id }
+      ]
+    }
   })
+
+  const isAdminSide = ['SUPER_ADMIN', 'ACTIVITY_ADMIN'].includes(req.user.role)
+  const isOtherAdmin = ['SUPER_ADMIN', 'ACTIVITY_ADMIN'].includes(other.role)
+
+  // 管理员与任何人聊天时，若无联系人则创建；若已被拉黑则保持现状
+  if (!contact && (isAdminSide || isOtherAdmin)) {
+    contact = await ensureContact(req.user.id, other.id)
+  }
+
+  let msgs
+  if (contact) {
+    msgs = await prisma.chatMessage.findMany({
+      where: { contactId: contact.id },
+      orderBy: { createdAt: 'asc' }
+    })
+  } else {
+    // 无联系人记录时，按双方 id 查询历史
+    msgs = await prisma.chatMessage.findMany({
+      where: {
+        OR: [
+          { fromId: req.user.id, toId: other.id },
+          { fromId: other.id, toId: req.user.id }
+        ]
+      },
+      orderBy: { createdAt: 'asc' }
+    })
+  }
   res.json({ data: msgs })
 })
 
@@ -133,7 +218,24 @@ router.post('/contacts/:username/messages', async (req, res) => {
   if (!other) return res.status(404).json({ error: '联系人不存在' })
   const { content } = req.body || {}
   if (!content) return res.status(400).json({ error: 'content 必填' })
-  const contact = await ensureContact(req.user.id, other.id)
+  let contact = await prisma.contact.findFirst({
+    where: {
+      OR: [
+        { userA: req.user.id, userB: other.id },
+        { userA: other.id, userB: req.user.id }
+      ]
+    }
+  })
+  const isAdminSide = ['SUPER_ADMIN', 'ACTIVITY_ADMIN'].includes(req.user.role)
+  const isOtherAdmin = ['SUPER_ADMIN', 'ACTIVITY_ADMIN'].includes(other.role)
+
+  if (!contact && (isAdminSide || isOtherAdmin)) {
+    contact = await ensureContact(req.user.id, other.id, { forceActive: true })
+  }
+
+  const { blockedMe } = computeBlockState(contact, req.user.id)
+  if (blockedMe) return res.status(403).json({ error: '被拉黑' })
+  if (!contact || contact.status !== 'ACTIVE') return res.status(403).json({ error: '双方不是好友' })
   const msg = await prisma.chatMessage.create({
     data: {
       contactId: contact.id,
@@ -144,6 +246,43 @@ router.post('/contacts/:username/messages', async (req, res) => {
   })
   await prisma.contact.update({ where: { id: contact.id }, data: { updatedAt: new Date() } })
   res.json({ ok: true, message: msg })
+})
+
+// 查询/设置黑名单
+router.get('/contacts/:username/blacklist', async (req, res) => {
+  const other = await prisma.user.findUnique({ where: { username: req.params.username } })
+  if (!other) return res.status(404).json({ error: '用户不存在' })
+  const contact = await prisma.contact.findFirst({
+    where: {
+      OR: [
+        { userA: req.user.id, userB: other.id },
+        { userA: other.id, userB: req.user.id }
+      ]
+    }
+  })
+  const { blockedByMe, blockedMe } = computeBlockState(contact, req.user.id)
+  res.json({ data: { blockedByMe, blockedMe, status: contact?.status || null } })
+})
+
+router.patch('/contacts/:username/blacklist', async (req, res) => {
+  const { block } = req.body || {}
+  const other = await prisma.user.findUnique({ where: { username: req.params.username } })
+  if (!other) return res.status(404).json({ error: '用户不存在' })
+  const a = Math.min(req.user.id, other.id)
+  const b = Math.max(req.user.id, other.id)
+
+  let contact = await prisma.contact.findFirst({ where: { userA: a, userB: b } })
+  if (!contact) {
+    contact = await prisma.contact.create({ data: { userA: a, userB: b, status: 'ACTIVE' } })
+  }
+
+  let status = 'ACTIVE'
+  if (block === true || block === 'true' || block === 1 || block === '1') {
+    status = req.user.id === a ? 'BLOCKED_BY_A' : 'BLOCKED_BY_B'
+  }
+
+  contact = await prisma.contact.update({ where: { id: contact.id }, data: { status, updatedAt: new Date() } })
+  res.json({ ok: true, status: contact.status })
 })
 
 module.exports = router

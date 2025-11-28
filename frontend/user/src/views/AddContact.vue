@@ -27,13 +27,14 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import axios from 'axios'
 import { showToast } from 'vant'
 import { useUserStore } from '@/stores/user'
 
 const router = useRouter()
+const route = useRoute()
 const userStore = useUserStore()
 
 const userId = ref('')
@@ -41,6 +42,12 @@ const alias = ref('')
 const loading = ref(false)
 
 const handleBack = () => router.back()
+
+onMounted(() => {
+  if (route.query.prefill) {
+    userId.value = route.query.prefill
+  }
+})
 
 const handleSubmit = async () => {
   if (!userId.value.trim()) return

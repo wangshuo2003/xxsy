@@ -165,6 +165,12 @@ const routes = [
         meta: { title: '聊天', requiresAuth: true }
       },
       {
+        path: '/chat/more',
+        name: 'ChatMore',
+        component: () => import('@/views/ChatMore.vue'),
+        meta: { title: '更多', requiresAuth: true }
+      },
+      {
         path: '/contacts/add',
         name: 'AddContact',
         component: () => import('@/views/AddContact.vue'),

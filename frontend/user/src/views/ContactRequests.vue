@@ -20,18 +20,15 @@
       >
         <template #value>
           <span class="time">{{ formatDate(group.latest.createdAt) }}</span>
+          <div class="actions-inline" v-if="group.pending">
+            <van-button size="mini" @click.stop="handleAction(group.pending, 'ignore')">忽略</van-button>
+            <van-button size="mini" type="danger" @click.stop="handleAction(group.pending, 'reject')">拒绝</van-button>
+            <van-button size="mini" type="primary" @click.stop="handleAction(group.pending, 'accept')">同意</van-button>
+          </div>
+          <span v-else class="status" :class="group.latest.status">{{ statusText(group.latest) }}</span>
         </template>
         <template #right-icon>
-          <div class="actions">
-            <template v-if="group.pending">
-              <van-button size="mini" @click.stop="handleAction(group.pending, 'ignore')">忽略</van-button>
-              <van-button size="mini" type="danger" @click.stop="handleAction(group.pending, 'reject')">拒绝</van-button>
-              <van-button size="mini" type="primary" @click.stop="handleAction(group.pending, 'accept')">同意</van-button>
-            </template>
-            <template v-else>
-              <span class="status" :class="group.latest.status">{{ statusText(group.latest) }}</span>
-            </template>
-          </div>
+          <van-icon name="arrow" class="cell-arrow" />
         </template>
       </van-cell>
     </van-list>
@@ -64,13 +61,22 @@
       v-model:show="showHistory"
       position="bottom"
       round
-      :style="{ height: '60%' }"
+      :style="{ height: '89%' }"
       :close-on-click-overlay="true"
+      :overlay="true"
+      overlay-class="contact-requests-overlay"
+      teleport="body"
+      :z-index="3000"
+      @click-overlay="closeHistory"
     >
       <div class="history-popup">
         <div class="popup-header">
           <span>{{ selectedGroup?.displayName }} 的申请记录</span>
-          <van-icon name="close" @click="showHistory = false" />
+          <div class="actions" v-if="selectedGroup?.pending">
+            <van-button size="mini" @click.stop="handleAction(selectedGroup.pending, 'ignore')">忽略</van-button>
+            <van-button size="mini" type="danger" @click.stop="handleAction(selectedGroup.pending, 'reject')">拒绝</van-button>
+            <van-button size="mini" type="primary" @click.stop="handleAction(selectedGroup.pending, 'accept')">同意</van-button>
+          </div>
         </div>
         <van-list>
           <van-cell
@@ -83,11 +89,7 @@
               <span class="time">{{ formatDate(req.createdAt) }}</span>
             </template>
             <template #right-icon>
-              <div class="actions" v-if="req.status === 'PENDING'">
-                <van-button size="mini" @click.stop="handleAction(req, 'ignore')">忽略</van-button>
-                <van-button size="mini" type="danger" @click.stop="handleAction(req, 'reject')">拒绝</van-button>
-                <van-button size="mini" type="primary" @click.stop="handleAction(req, 'accept')">同意</van-button>
-              </div>
+              <span class="status" :class="req.status">{{ statusText(req) }}</span>
             </template>
           </van-cell>
         </van-list>
@@ -135,6 +137,13 @@ const fetchRequests = async () => {
 const handleAction = async (reqObj, action) => {
   try {
     const headers = userStore.token ? { Authorization: `Bearer ${userStore.token}` } : {}
+    // 本地立即更新，避免按钮状态短暂停留
+    const optimisticStatus = action === 'accept' ? 'ACCEPTED' : action === 'reject' ? 'REJECTED' : 'IGNORED'
+    reqObj.status = optimisticStatus
+    if (selectedGroup.value && selectedGroup.value.pending && selectedGroup.value.pending.id === reqObj.id) {
+      selectedGroup.value.pending = null
+      selectedGroup.value.latest = { ...reqObj }
+    }
     await axios.post(`/api/messages/requests/${reqObj.id}/action`, { action }, { headers })
     showToast(action === 'accept' ? '已同意' : action === 'reject' ? '已拒绝' : '已忽略')
     await fetchRequests()
@@ -191,6 +200,11 @@ const openHistory = (group) => {
   showHistory.value = true
 }
 
+const closeHistory = () => {
+  showHistory.value = false
+  selectedGroup.value = null
+}
+
 onMounted(fetchRequests)
 
 onMounted(() => {
@@ -209,17 +223,70 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
 }
+.contact-requests-overlay {
+  background: rgba(0, 0, 0, 0.6) !important;
+}
+.history-popup .popup-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  padding: 10px;
+}
+.history-popup .popup-header span {
+  flex: 1;
+  min-width: 0;
+}
+.history-popup .popup-header .actions {
+  margin-left: auto;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.history-popup .van-icon-close {
+  display: none !important;
+}
 .van-tabs {
   margin: 8px;
 }
 .time {
   font-size: 12px;
   color: #999;
+  display: inline-block;
 }
 .actions {
   display: flex;
   gap: 6px;
   align-items: center;
+}
+.actions-inline {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.requests-page :deep(.van-cell__value) {
+  display: flex !important;
+  flex-direction: column;
+  align-items: center !important;
+  justify-content: center;
+  text-align: center;
+  gap: 6px;
+  width: 100%;
+}
+.requests-page :deep(.van-cell__right-icon) {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 100% !important;
+}
+.requests-page :deep(.van-cell__right-icon .van-icon) {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+.cell-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .status {
   font-size: 13px;

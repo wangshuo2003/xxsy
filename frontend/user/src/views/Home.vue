@@ -16,54 +16,28 @@
 
     <!-- 消息 -->
     <div class="section">
-      <div class="section-header">
+      <div class="section-header" @click="goToMessages">
         <h3>消息</h3>
-        <van-button plain type="primary" size="small" @click="goToMessages">查看全部</van-button>
+        <van-button plain type="primary" size="small">查看全部</van-button>
       </div>
 
-      <div v-if="hasMessages">
+      <div v-if="latestChats.length">
         <van-list>
           <van-cell
-            v-if="latestCertificate"
-            icon="certificate"
-            is-link
-            @click="goToCertificate(latestCertificate.id)"
-          >
-            <template #title>
-              <div class="activity-title">最新证书：{{ latestCertificate.title }}</div>
-            </template>
-            <template #label>
-              <div class="policy-time">{{ formatDate(latestCertificate.issueDate || latestCertificate.createdAt) }}</div>
-            </template>
-          </van-cell>
-
-          <van-cell
-            v-for="order in ordersSummary"
-            :key="order.id"
-            icon="orders-o"
-            is-link
-            @click="goToOrders"
-          >
-            <template #title>
-              <div class="activity-title">订单 {{ order.orderNo }}</div>
-            </template>
-            <template #label>
-              <div class="policy-time">{{ mapOrderStatus(order.status) }} · {{ formatDate(order.updatedAt || order.createdAt) }}</div>
-            </template>
-          </van-cell>
-
-          <van-cell
-            v-for="chat in chats"
+            v-for="chat in latestChats"
             :key="chat.id"
             icon="chat-o"
             is-link
             @click="goToChat(chat)"
           >
             <template #title>
-              <div class="activity-title">{{ chat.title }}</div>
+              <div class="activity-title">{{ chat.name }}</div>
             </template>
             <template #label>
-              <div class="policy-time">{{ chat.desc }}</div>
+              <div class="policy-time">{{ chat.preview || '点击查看消息' }}</div>
+            </template>
+            <template #value>
+              <span class="policy-time">{{ chat.preview || '点击查看消息' }}</span>
             </template>
           </van-cell>
         </van-list>
@@ -147,16 +121,12 @@ const userStore = useUserStore()
 const carousels = ref([])
 const policies = ref([])
 const certificates = ref([])
-const ordersSummary = ref([])
-const chats = ref([
-  { id: 'super-admin', title: '与超级管理员聊天', desc: '反馈问题或获取帮助' },
-  { id: 'base-admin', title: '与基地管理员聊天', desc: '咨询基地活动与安排' },
-  { id: 'other-users', title: '与其他用户聊天', desc: '与同学/同伴交流' }
-])
+const chatPreviews = ref([])
 const activities = ref([])
 const swipeRef = ref(null)
 const autoplayDuration = ref(3000)
 let autoplayTimeout = null
+const THREAD_STORAGE_KEY = 'chatThreads'
 const defaultCarousels = [
   {
     id: 'demo-1',
@@ -186,6 +156,15 @@ const fetchBingWallpapers = async (idx = 0, n = 4) => {
   } catch (error) {
     console.error('获取 Bing 壁纸失败:', error)
     return []
+  }
+}
+
+const loadLocalThreads = () => {
+  try {
+    const raw = localStorage.getItem(THREAD_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : {}
+  } catch (e) {
+    return {}
   }
 }
 
@@ -317,21 +296,6 @@ const fetchPolicies = async () => {
   }
 }
 
-// 获取最新订单摘要
-const fetchOrdersSummary = async () => {
-  try {
-    const response = await axios.get('/api/orders', {
-      params: { limit: 3, sortBy: 'updatedAt' },
-      headers: userStore.token ? { Authorization: `Bearer ${userStore.token}` } : {}
-    })
-    const list = Array.isArray(response?.data?.data) ? response.data.data : []
-    ordersSummary.value = list
-  } catch (error) {
-    console.error('获取订单摘要失败:', error)
-    ordersSummary.value = []
-  }
-}
-
 // 获取用户证书
 const fetchCertificates = async () => {
   if (!userStore.isLoggedIn) {
@@ -349,6 +313,84 @@ const fetchCertificates = async () => {
   } catch (error) {
     console.error('获取证书失败:', error)
     certificates.value = []
+  }
+}
+
+// 获取最近 3 条聊天
+const fetchRecentChats = async () => {
+  if (!userStore.token) {
+    chatPreviews.value = []
+    return
+  }
+
+  try {
+    const localThreads = loadLocalThreads()
+    const res = await axios.get('/api/messages/contacts', {
+      params: { limit: 3, sortBy: 'updatedAt' },
+      headers: { Authorization: `Bearer ${userStore.token}` }
+    })
+    const list = Array.isArray(res?.data?.data) ? res.data.data : []
+
+    const headers = { Authorization: `Bearer ${userStore.token}` }
+
+    const enriched = await Promise.all(
+      list.map(async (item) => {
+        const id = item.id || item.contactId || item.userId
+        if (!id) return null
+
+        const apiTs = new Date(item.updatedAt || item.lastTime || Date.now()).getTime()
+        const apiText = item.lastMessage || item.preview || ''
+
+        const thread = Array.isArray(localThreads[id]) ? localThreads[id] : []
+        const lastLocal = thread.length ? thread[thread.length - 1] : null
+        const localTs = lastLocal?.time ? new Date(lastLocal.time).getTime() : 0
+        const localText = lastLocal?.text || ''
+
+        let ts = apiTs
+        let preview = apiText
+
+        if (localTs > ts) {
+          ts = localTs
+          preview = localText
+        }
+
+        // 如果仍然没有预览，单独请求该会话的最后一条消息
+        if (!preview) {
+          try {
+            const resMsg = await axios.get(`/api/messages/contacts/${encodeURIComponent(id)}/messages`, {
+              params: { limit: 1, sortBy: 'createdAt', order: 'desc' },
+              headers
+            })
+            const msg = Array.isArray(resMsg?.data?.data) ? resMsg.data.data[0] : null
+            if (msg) {
+              preview = msg.content || preview
+              ts = new Date(msg.createdAt || ts).getTime()
+            }
+          } catch (e) {
+            console.error('拉取会话最新消息失败', id, e)
+          }
+        }
+
+        return {
+          id,
+          name: item.name || item.nickname || '好友',
+          preview: preview || '暂无消息',
+          ts
+        }
+      })
+    )
+
+    chatPreviews.value = enriched
+      .filter(Boolean)
+      .sort((a, b) => (b.ts || 0) - (a.ts || 0))
+      .slice(0, 3)
+      .map(item => ({
+        ...item,
+        time: formatDate(item.ts || Date.now())
+      }))
+  } catch (error) {
+    console.error('获取聊天摘要失败:', error)
+    chatPreviews.value = []
   }
 }
 
@@ -372,36 +414,18 @@ const goToMessages = () => {
   router.push('/messages')
 }
 
-const goToOrders = () => {
-  router.push('/orders')
-}
-
 const goToChat = (chat) => {
-  router.push({ path: '/messages', query: { chatWith: chat.id } })
+  router.push({ path: '/chat', query: { with: chat.id, name: chat.name } })
 }
 
-const mapOrderStatus = (status) => {
-  const statusMap = {
-    'PENDING': '待支付',
-    'PAID': '已支付',
-    'CANCELLED': '已取消',
-    'REFUNDING': '退款处理中',
-    'REFUNDED': '已退款'
-  }
-  return statusMap[status] || status || '订单更新'
-}
-
-const latestCertificate = computed(() => certificates.value?.[0] || null)
-const hasMessages = computed(() => {
-  return Boolean(latestCertificate.value) || ordersSummary.value.length > 0 || chats.value.length > 0
-})
+const latestChats = computed(() => chatPreviews.value)
 
 onMounted(() => {
   fetchCarousels()
   fetchActivities()
   fetchPolicies()
   fetchCertificates()
-  fetchOrdersSummary()
+  fetchRecentChats()
 })
 </script>
 
@@ -475,6 +499,7 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 15px 15px 0px 15px;
+  cursor: pointer;
   
 }
 
