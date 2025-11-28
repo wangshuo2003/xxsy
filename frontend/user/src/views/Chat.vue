@@ -21,22 +21,31 @@
       <template v-else>
         <div
           v-for="(msg, idx) in messages"
-          :key="msg.localId || idx"
-          :class="['bubble-row', msg.from === 'me' ? 'mine' : 'theirs']"
-          @click="msg.status === 'failed' ? resendMessage(msg) : null"
+          :key="msg.localId || msg.type || idx"
+          v-bind="msg.type === 'notice' ? {} : null"
         >
-          <div
-            class="time-outside"
-            :class="[msg.from === 'me' ? 'time-left' : 'time-right', msg.status === 'failed' ? 'failed' : '']"
-          >
-            <span v-if="msg.status === 'failed'" class="fail-tag">未发送</span>
-            {{ formatTime(msg.time) }}
-          </div>
-          <div class="bubble" :class="msg.status === 'failed' ? 'failed' : ''">
-            <div class="text" :class="msg.status === 'failed' ? 'failed' : ''">
-              {{ msg.text }}
+          <template v-if="msg.type === 'notice'">
+            <div class="accept-notice">{{ msg.text }}</div>
+          </template>
+          <template v-else>
+            <div
+              :class="['bubble-row', msg.from === 'me' ? 'mine' : 'theirs']"
+              @click="msg.status === 'failed' ? resendMessage(msg) : null"
+            >
+              <div
+                class="time-outside"
+                :class="[msg.from === 'me' ? 'time-left' : 'time-right', msg.status === 'failed' ? 'failed' : '']"
+              >
+                <span v-if="msg.status === 'failed'" class="fail-tag">未发送</span>
+                {{ formatTime(msg.time) }}
+              </div>
+              <div class="bubble" :class="msg.status === 'failed' ? 'failed' : ''">
+                <div class="text" :class="msg.status === 'failed' ? 'failed' : ''">
+                  {{ msg.text }}
+                </div>
+              </div>
             </div>
-          </div>
+          </template>
         </div>
 
         <div v-if="loading" class="loading">
@@ -71,6 +80,7 @@ const userStore = useUserStore()
 
 const contactId = route.query.with || 'super-admin'
 const contactName = ref(route.query.name || mapContactName(contactId))
+const otherUserId = ref(null)
 
 const messages = ref([])
 const MAX_KEEP = 100
@@ -82,6 +92,9 @@ const headers = computed(() => (userStore.token ? { Authorization: `Bearer ${use
 let pollTimer = null
 const contactMissing = ref(false)
 const READ_KEY = 'chatReadAt'
+const acceptNoticeMeta = ref(null) // 保留字段，现主要依赖系统消息
+let lastNoticeFetch = 0
+const lastAcceptNoticeTs = ref(0)
 
 const markThreadRead = () => {
   try {
@@ -119,6 +132,7 @@ const scrollToBottom = () => {
 onMounted(() => {
   // 进入聊天即视为已读当前会话
   markThreadRead()
+  fetchAcceptNotice()
 })
 
 onUnmounted(() => {
@@ -126,15 +140,99 @@ onUnmounted(() => {
   markThreadRead()
 })
 
-const scrollToLatestIfNew = (newCount) => {
+const isAtBottom = () => {
+  const el = listRef.value
+  if (!el) return true
+  const distance = el.scrollHeight - el.scrollTop - el.clientHeight
+  return distance < 50 // 阈值：距离底部小于 50px 视为在底部
+}
+
+const scrollToLatestIfNew = (newCount, shouldScroll) => {
+  if (!shouldScroll) return
   nextTick(() => {
     const el = listRef.value
     if (!el) return
-    // 仅当有新增消息时滚动到底
     if (newCount > 0) {
       el.scrollTop = el.scrollHeight
     }
   })
+}
+
+const injectAcceptNotice = (meta) => {
+  if (!meta?.time) return
+  const { time, byMe, otherName, otherId } = meta
+  const ts = new Date(time).getTime()
+  if (ts <= lastAcceptNoticeTs.value) return
+  const nameBest = otherName || contactName.value
+  const idBest = otherId || contactId
+  const targetLabel = nameBest && nameBest !== '好友'
+    ? `${nameBest}（${idBest}）`
+    : idBest
+  const text = byMe
+    ? `我通过了 ${targetLabel} 的好友申请 ${formatTime(time)}`
+    : `对方通过了好友申请 ${formatTime(time)}`
+  messages.value.push({ type: 'notice', text, time })
+  lastAcceptNoticeTs.value = ts
+  messages.value.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
+  persistThread()
+}
+
+const fetchAcceptNotice = async () => {
+  const now = Date.now()
+  if (now - lastNoticeFetch < 5000) return
+  lastNoticeFetch = now
+  try {
+    const headersObj = headers.value
+    const [incomingRes, sentRes] = await Promise.all([
+      axios.get('/api/messages/requests', { headers: headersObj, validateStatus: () => true }),
+      axios.get('/api/messages/requests/sent', { headers: headersObj, validateStatus: () => true })
+    ])
+    const incoming = Array.isArray(incomingRes?.data?.data) ? incomingRes.data.data : []
+    const sent = Array.isArray(sentRes?.data?.data) ? sentRes.data.data : []
+    const meId = userStore.user?.id
+
+    const acceptedByThem = sent
+      .filter(r => r.status === 'ACCEPTED')
+      .filter(r => (
+        r.toUser?.username === contactId ||
+        r.to === contactId ||
+        (otherUserId.value && r.toId === otherUserId.value)
+      ))
+      .map(r => ({
+        time: r.updatedAt || r.createdAt,
+        byMe: false,
+        otherName: r.toUser?.name || r.toUser?.username || contactName.value,
+        otherId: r.toUser?.username || r.to
+      }))
+
+    const acceptedByMe = incoming
+      .filter(r => r.status === 'ACCEPTED')
+      .filter(r => (
+        r.fromUser?.username === contactId ||
+        r.from === contactId ||
+        (otherUserId.value && r.fromId === otherUserId.value)
+      ))
+      .map(r => ({
+        time: r.updatedAt || r.createdAt,
+        byMe: true,
+        otherName: r.fromUser?.name || r.fromUser?.username || contactName.value,
+        otherId: r.fromUser?.username || r.from
+      }))
+
+    const merged = [...acceptedByMe, ...acceptedByThem].filter(n => n.time)
+    if (!merged.length) return
+
+    const latest = merged.reduce((acc, cur) => {
+      const a = new Date(acc.time || 0).getTime()
+      const b = new Date(cur.time || 0).getTime()
+      return b >= a ? cur : acc
+    })
+
+    acceptNoticeMeta.value = latest
+    injectAcceptNotice(latest)
+  } catch (e) {
+    console.warn('获取好友通过提示失败', e)
+  }
 }
 
 const sendMessage = async () => {
@@ -149,7 +247,8 @@ const sendMessage = async () => {
     status: 'sending'
   }
   messages.value.push(msg)
-  scrollToLatestIfNew(1)
+  // 自己发送消息时无论列表是否在底部都滚动到最新，保持输入体验
+  scrollToLatestIfNew(1, true)
   persistThread()
 
   try {
@@ -241,6 +340,8 @@ const loadMessagesFromServer = async (withLoading = false) => {
   try {
     // 先拿本地存储，保留失败记录
     const stored = readStorageThread()
+    const noticeLocal = (stored || []).filter(m => m.type === 'notice')
+    const wasBottom = isAtBottom()
 
     const res = await axios.get(`/api/messages/contacts/${encodeURIComponent(contactId)}/messages`, {
       headers: headers.value
@@ -250,7 +351,10 @@ const loadMessagesFromServer = async (withLoading = false) => {
       from: m.fromId === userStore.user?.id ? 'me' : 'them',
       text: m.content,
       time: m.createdAt,
-      status: 'sent'
+      status: 'sent',
+      fromId: m.fromId,
+      toId: m.toId,
+      type: m.content && m.content.includes('通过了') && m.content.includes('好友申请') ? 'notice' : undefined
     }))
 
     const failedLocal = (stored || []).filter(m => m.status === 'failed')
@@ -260,11 +364,26 @@ const loadMessagesFromServer = async (withLoading = false) => {
         merged.push(f)
       }
     })
+    noticeLocal.forEach(n => {
+      if (!merged.find(m => m.type === 'notice' && m.time === n.time && m.text === n.text)) {
+        merged.push(n)
+      }
+      const ts = new Date(n.time).getTime()
+      if (ts > lastAcceptNoticeTs.value) lastAcceptNoticeTs.value = ts
+    })
     merged.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
     messages.value = merged.slice(-MAX_KEEP)
+    // 记录对方的用户ID，便于匹配好友申请
+    if (!otherUserId.value) {
+      const first = merged.find(m => m.fromId || m.toId)
+      if (first) {
+        const meId = userStore.user?.id
+        otherUserId.value = first.fromId === meId ? first.toId : first.fromId
+      }
+    }
     persistThread(messages.value)
     const after = messages.value.length
-    scrollToLatestIfNew(Math.max(0, after - before))
+    scrollToLatestIfNew(Math.max(0, after - before), wasBottom)
   } catch (e) {
     console.error('加载消息失败', e)
     const status = e?.response?.status
@@ -492,6 +611,14 @@ const readStorageThread = () => {
 .bubble-row.theirs .time-outside {
   order: 2;
   margin-left: 6px;
+}
+
+.accept-notice {
+  text-align: center;
+  color: #07c160;
+  font-size: 12px;
+  margin-top: 6px;
+  margin-bottom: 4px;
 }
 
 .chat-input {

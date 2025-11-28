@@ -39,6 +39,19 @@ router.post('/requests', async (req, res) => {
 
   const target = await prisma.user.findUnique({ where: { username: toUser } })
   if (!target) return res.status(404).json({ error: '该用户不存在' })
+  if (target.id === req.user.id) return res.status(400).json({ error: '不能给自己发送好友申请' })
+
+  const existingContact = await prisma.contact.findFirst({
+    where: {
+      OR: [
+        { userA: req.user.id, userB: target.id },
+        { userA: target.id, userB: req.user.id }
+      ]
+    }
+  })
+  if (existingContact && existingContact.status === 'ACTIVE') {
+    return res.status(400).json({ error: '已经是好友' })
+  }
 
   // 若对方已拉黑当前用户，直接拒绝
   const contact = await prisma.contact.findFirst({
@@ -103,6 +116,21 @@ router.post('/requests/:id/action', async (req, res) => {
     const contact = await ensureContact(fr.fromId, fr.toId, { forceActive: true })
     // 更新时间，确保双方列表立即显示
     await prisma.contact.update({ where: { id: contact.id }, data: { updatedAt: new Date(), status: 'ACTIVE' } })
+
+    // 写入一条系统消息，便于两端消息流展示“通过好友申请”提示
+    const fromUser = await prisma.user.findUnique({ where: { id: fr.fromId } })
+    const toUser = await prisma.user.findUnique({ where: { id: fr.toId } })
+    const now = new Date()
+    const fmt = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+    const sysContent = `${toUser?.name || toUser?.username || '我'}（${toUser?.username}）通过了好友申请 ${fmt}`
+    await prisma.chatMessage.create({
+      data: {
+        contactId: contact.id,
+        fromId: fr.toId, // 通过者
+        toId: fr.fromId, // 申请人
+        content: sysContent
+      }
+    })
   }
 
   res.json({ ok: true, request: updated })
