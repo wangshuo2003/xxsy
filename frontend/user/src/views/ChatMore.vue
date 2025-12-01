@@ -20,6 +20,12 @@
           />
         </template>
       </van-cell>
+      <van-cell
+        title="备注"
+        is-link
+        :value="remarkText || '未设置'"
+        @click="goRemark"
+      />
     </div>
 
     <van-action-sheet
@@ -33,11 +39,12 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast, showConfirmDialog } from 'vant'
 import axios from 'axios'
 import { useUserStore } from '@/stores/user'
+import { getRemark } from '@/utils/remarks'
 
 const route = useRoute()
 const router = useRouter()
@@ -45,7 +52,9 @@ const userStore = useUserStore()
 
 const contactId = route.query.with
 const contactName = route.query.name || '好友'
-const titleText = computed(() => `${contactName}（${contactId}）`)
+const remarkRef = ref(getRemark(contactId))
+const remarkText = computed(() => remarkRef.value)
+const titleText = computed(() => `${remarkText.value || contactName}（${contactId}）`)
 const headers = computed(() => (userStore.token ? { Authorization: `Bearer ${userStore.token}` } : {}))
 
 const openSheet = ref(false)
@@ -128,6 +137,11 @@ const toggleBlacklist = async (val) => {
 
 onMounted(() => {
   fetchBlacklist()
+  window.addEventListener('remark-updated', handleRemarkUpdate)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('remark-updated', handleRemarkUpdate)
 })
 
 const markDeleted = () => {
@@ -196,6 +210,16 @@ const onSelectAction = (action) => {
 }
 
 const handleBack = () => router.back()
+
+const goRemark = () => {
+  router.push({ path: '/chat/remark', query: { with: contactId } })
+}
+
+const handleRemarkUpdate = (e) => {
+  if (e?.detail?.id === contactId) {
+    remarkRef.value = e.detail.remark || ''
+  }
+}
 </script>
 
 <style scoped>

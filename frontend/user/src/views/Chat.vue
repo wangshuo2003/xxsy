@@ -67,19 +67,19 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick, computed } from 'vue'
-import { onUnmounted } from 'vue'
+import { ref, onMounted, nextTick, computed, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
 import { showToast, showConfirmDialog } from 'vant'
 import { useUserStore } from '@/stores/user'
+import { getRemark } from '@/utils/remarks'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 
 const contactId = route.query.with || 'super-admin'
-const contactName = ref(route.query.name || mapContactName(contactId))
+const contactName = ref(mapContactName(contactId))
 const otherUserId = ref(null)
 
 const messages = ref([])
@@ -108,6 +108,8 @@ const markThreadRead = () => {
 }
 
 function mapContactName(id) {
+  const remark = getRemark(id)
+  if (remark) return remark
   if (id === 'super-admin') return '超级管理员'
   if (id === 'base-admin') return '基地管理员'
   return route.query.name || '好友'
@@ -133,12 +135,20 @@ onMounted(() => {
   // 进入聊天即视为已读当前会话
   markThreadRead()
   fetchAcceptNotice()
+  window.addEventListener('remark-updated', handleRemarkUpdate)
 })
 
 onUnmounted(() => {
   // 离开时再次写入已读时间，防止列表误判为未读
   markThreadRead()
+  window.removeEventListener('remark-updated', handleRemarkUpdate)
 })
+
+const handleRemarkUpdate = (e) => {
+  if (e?.detail?.id === contactId) {
+    contactName.value = mapContactName(contactId)
+  }
+}
 
 const isAtBottom = () => {
   const el = listRef.value
@@ -414,6 +424,11 @@ const stopPolling = () => {
 }
 
 const ensureContactName = async () => {
+  const remark = getRemark(contactId)
+  if (remark) {
+    contactName.value = remark
+    return
+  }
   if (contactName.value && contactName.value !== mapContactName(contactId)) return
   try {
     const res = await axios.get('/api/messages/contacts', {
@@ -423,7 +438,7 @@ const ensureContactName = async () => {
     const list = Array.isArray(res?.data?.data) ? res.data.data : []
     const match = list.find(item => (item.id || item.contactId || item.userId) === contactId)
     if (match) {
-      contactName.value = match.name || match.nickname || contactName.value
+      contactName.value = getRemark(contactId) || match.name || match.nickname || contactName.value
     }
   } catch (e) {
     console.error('获取联系人名称失败', e)

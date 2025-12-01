@@ -49,14 +49,14 @@
         </div>
 
         <!-- 活动描述 -->
-        <div class="description" v-if="activity.description">
-          <h3>活动介绍</h3>
-          <div class="description-content" v-html="activity.description"></div>
-        </div>
+      <div class="description" v-if="activity.description">
+        <h3>活动介绍</h3>
+        <div class="description-content" v-html="activity.description"></div>
       </div>
+    </div>
 
-      <!-- 底部操作栏 -->
-      <div class="bottom-bar">
+    <!-- 底部操作栏：弹出退款对话框时直接移除，避免遮挡弹窗按钮 -->
+      <div v-if="!showRefundDialog" class="bottom-bar">
         <van-button
           class="favorite-button"
           :class="{ 'favorited': isFavorited }"
@@ -194,7 +194,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, watch, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { showToast, showSuccessToast } from 'vant'
@@ -536,7 +536,8 @@ watch(() => route.params.orderId, (newOrderId, oldOrderId) => {
 .activity-detail {
   min-height: 100vh;
   background-color: #f7f8fa;
-  padding-bottom: 80px;
+  display: flex;
+  flex-direction: column;
 }
 
 .loading {
@@ -548,6 +549,10 @@ watch(() => route.params.orderId, (newOrderId, oldOrderId) => {
 
 .content {
   background-color: white;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .activity-image {
@@ -631,17 +636,25 @@ watch(() => route.params.orderId, (newOrderId, oldOrderId) => {
 }
 
 .bottom-bar {
-  position: fixed;
+  position: sticky;
   bottom: 0;
   left: 0;
   right: 0;
   background-color: white;
-  padding: 12px 16px;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
   box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
-  z-index: 100;
+  z-index: 2;
   display: flex;
   align-items: stretch;
   gap: 12px;
+}
+
+:deep(.van-overlay) {
+  z-index: 20 !important;
+}
+
+:deep(.van-dialog) {
+  z-index: 21 !important;
 }
 
 .main-actions {

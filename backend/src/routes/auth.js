@@ -72,7 +72,7 @@ router.post('/register', [
       return res.status(400).json({ errors: errors.array() })
     }
 
-    const { username, password, name, phone, school, grade, className } = req.body
+    const { username, password, name, phone, school, grade, className, age, signature } = req.body
 
     // 检查用户是否已存在
     const existingUser = await prisma.user.findFirst({
@@ -101,6 +101,8 @@ router.post('/register', [
         school,
         grade,
         className,
+        age: age ? parseInt(age, 10) : null,
+        signature: signature?.trim() || null,
         role: 'STUDENT'
       },
       select: {
@@ -111,6 +113,8 @@ router.post('/register', [
         school: true,
         grade: true,
         className: true,
+        age: true,
+        signature: true,
         role: true,
         createdAt: true
       }
@@ -190,6 +194,8 @@ router.post('/login', [
         school: user.school,
         grade: user.grade,
         className: user.className,
+        age: user.age,
+        signature: user.signature,
         role: user.role
       },
       token
@@ -214,6 +220,8 @@ router.get('/me', authMiddleware, async (req, res) => {
         school: true,
         grade: true,
         className: true,
+        age: true,
+        signature: true,
         role: true,
         avatar: true,
         createdAt: true
@@ -269,9 +277,12 @@ router.put('/password', authMiddleware, [
 
 // 编辑用户资料
 router.put('/profile', authMiddleware, [
-  body('name').notEmpty().withMessage('姓名不能为空'),
-  body('phone').notEmpty().withMessage('手机号不能为空')
+  body('name').optional({ nullable: true }).notEmpty().withMessage('姓名不能为空'),
+  body('phone').optional({ nullable: true }).notEmpty().withMessage('手机号不能为空')
     .isLength({ min: 3, max: 20 }).withMessage('手机号长度应在3-20个字符之间'),
+  // 年龄取消上限限制，仅要求整数
+  body('age').optional().isInt().withMessage('年龄需为整数'),
+  body('signature').optional().isLength({ max: 255 }).withMessage('个性签名不能超过255个字符'),
   body('school').optional().isLength({ max: 128 }).withMessage('学校名称不能超过128个字符'),
   body('grade').optional().isLength({ max: 64 }).withMessage('年级信息不能超过64个字符'),
   body('className').optional().isLength({ max: 64 }).withMessage('班级信息不能超过64个字符')
@@ -282,32 +293,48 @@ router.put('/profile', authMiddleware, [
       return res.status(400).json({ errors: errors.array() })
     }
 
-    const { name, phone, school, grade, className } = req.body
+    const { name, phone, school, grade, className, age, signature } = req.body
+
+    // 如果没有任何待更新字段，直接返回
+    const hasPayload = [name, phone, school, grade, className, age, signature]
+      .some(v => v !== undefined)
+    if (!hasPayload) {
+      return res.status(400).json({ error: '未提供需要更新的字段' })
+    }
 
     // 检查手机号是否已被其他用户使用
-    const existingUser = await prisma.user.findFirst({
-      where: {
-        AND: [
-          { phone },
-          { NOT: { id: req.user.id } }
-        ]
-      }
-    })
+    if (phone !== undefined) {
+      const existingUser = await prisma.user.findFirst({
+        where: {
+          AND: [
+            { phone },
+            { NOT: { id: req.user.id } }
+          ]
+        }
+      })
 
-    if (existingUser) {
-      return res.status(400).json({ error: '手机号已被其他用户使用' })
+      if (existingUser) {
+        return res.status(400).json({ error: '手机号已被其他用户使用' })
+      }
     }
+
+    // 仅包含需要修改的字段
+    const updateData = {}
+    if (name !== undefined) updateData.name = name
+    if (phone !== undefined) updateData.phone = phone
+    if (school !== undefined) updateData.school = school?.trim() || null
+    if (grade !== undefined) updateData.grade = grade?.trim() || null
+    if (className !== undefined) updateData.className = className?.trim() || null
+    if (age !== undefined) {
+      updateData.age = age === '' || age === null ? null
+        : (typeof age === 'number' ? age : parseInt(age, 10))
+    }
+    if (signature !== undefined) updateData.signature = signature?.trim() || null
 
     // 更新用户信息
     const updatedUser = await prisma.user.update({
       where: { id: req.user.id },
-      data: {
-        name,
-        phone,
-        school: school?.trim() || null,
-        grade: grade?.trim() || null,
-        className: className?.trim() || null
-      },
+      data: updateData,
       select: {
         id: true,
         username: true,
@@ -316,6 +343,8 @@ router.put('/profile', authMiddleware, [
         school: true,
         grade: true,
         className: true,
+        age: true,
+        signature: true,
         role: true,
         avatar: true,
         createdAt: true
@@ -333,6 +362,8 @@ router.put('/profile', authMiddleware, [
           school: updatedUser.school,
           grade: updatedUser.grade,
           className: updatedUser.className,
+          age: updatedUser.age,
+          signature: updatedUser.signature,
           role: updatedUser.role,
           isDisabled: false
         }

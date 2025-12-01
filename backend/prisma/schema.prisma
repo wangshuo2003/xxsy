@@ -16,6 +16,8 @@ model User {
   school              String?
   grade               String?
   className           String?
+  age                 Int?
+  signature           String?
   phone               String               @db.VarChar(20)
   role                Role                 @default(STUDENT)
   avatar              String?

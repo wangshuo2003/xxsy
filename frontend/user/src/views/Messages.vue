@@ -53,6 +53,8 @@
       </div>
 
       <div v-else class="more-panel">
+        <van-cell title="设置" icon="setting-o" is-link to="/messages/settings" />
+        <van-cell title="我的信息" icon="user-o" is-link to="/messages/me" />
         <van-cell title="添加联系人" icon="add-o" is-link @click="handleAddFriend" />
         <van-cell title="返回首页" icon="home-o" is-link to="/home" />
       </div>
@@ -71,6 +73,7 @@ import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
 import { useUserStore } from '@/stores/user'
+import { getRemarks } from '@/utils/remarks'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -79,6 +82,7 @@ const tabbarStyle = { height: '60px', paddingBottom: 'env(safe-area-inset-bottom
 const unreadCount = ref(0)
 const pendingRequestCount = ref(0)
 const THREAD_KEEP = 100
+const SORT_STORAGE = 'contact_sort_pref'
 let pollTimer = null
 
 const chats = ref([])
@@ -87,6 +91,7 @@ const threads = ref({})
 const readMap = ref({})
 const deletedSet = ref(new Set())
 const mutedSet = ref(new Set())
+const remarks = ref(getRemarks())
 
 const formatDate = (dateString) => {
   if (!dateString) return ''
@@ -116,9 +121,29 @@ const handleAddFriend = () => {
   router.push('/contacts/add')
 }
 
+const refreshRemarks = () => {
+  remarks.value = getRemarks()
+}
+
 const goRequests = () => {
   router.push('/messages/contacts/requests')
 }
+
+// 排序设置
+const sortPref = ref(loadSortPref())
+function loadSortPref() {
+  try {
+    const raw = localStorage.getItem(SORT_STORAGE)
+    if (raw) return JSON.parse(raw)
+  } catch (_) {}
+  return { field: 'updatedAt', order: 'desc' }
+}
+window.addEventListener('contact-sort-changed', (e) => {
+  if (e?.detail) {
+    sortPref.value = e.detail
+    fetchContacts()
+  }
+})
 
 onMounted(() => {
   // 初始 tab 与路由同步
@@ -132,6 +157,7 @@ onMounted(() => {
   loadReadMap()
   loadDeleted()
   loadMuted()
+  refreshRemarks()
   syncRouteWithTab(activeTab.value)
 
   const start = () => {
@@ -152,10 +178,13 @@ onMounted(() => {
   watch(() => userStore.token, (val) => {
     if (val) start()
   }, { immediate: false })
+
+  window.addEventListener('remark-updated', refreshRemarks)
 })
 
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
+  window.removeEventListener('remark-updated', refreshRemarks)
 })
 
 watch(
@@ -183,15 +212,16 @@ const recentContacts = computed(() => {
     existing.add(contact.id)
     const last = getLastFromThread(contact.id)
     const lastTime = last?.time || contact.updatedAt || new Date().toISOString()
+    const displayName = remarks.value[contact.id] || contact.name
     items.push({
       id: contact.id,
       icon: 'user-o',
-      title: contact.name,
+      title: displayName,
       label: last?.text || contact.lastMessage || '点击进入聊天',
       isUnread: Boolean(contact.isUnread),
       time: formatDate(lastTime),
       lastTS: new Date(lastTime).getTime(),
-      onClick: () => goChat(contact)
+      onClick: () => goChat({ ...contact, name: displayName, title: displayName })
     })
   })
 
@@ -203,7 +233,7 @@ const recentContacts = computed(() => {
     items.push({
       id,
       icon: 'user-o',
-      title: id,
+      title: remarks.value[id] || id,
       label: last?.text || '点击进入聊天',
       isUnread: computeUnread(id, new Date(lastTime).getTime()),
       time: formatDate(lastTime),
@@ -228,7 +258,11 @@ const contactsBadge = computed(() => {
 const fetchContacts = async () => {
   try {
     const res = await axios.get('/api/messages/contacts', {
-      params: { limit: 20, sortBy: 'updatedAt', order: 'desc' },
+      params: {
+        limit: 20,
+        sortBy: sortPref.value.field || 'updatedAt',
+        order: sortPref.value.order || 'desc'
+      },
       headers: userStore.token ? { Authorization: `Bearer ${userStore.token}` } : {}
     })
     let list = Array.isArray(res?.data?.data) ? res.data.data : []
@@ -303,17 +337,19 @@ const fetchContacts = async () => {
       })
     )
 
-    contacts.value = enriched
-      .filter(Boolean)
-      .filter(item => {
-        // 若服务器已返回该联系人，视为有效，移除本地删除标记（说明已重新建立联系）
-        if (item?.id && deletedSet.value.has(item.id)) {
-          deletedSet.value.delete(item.id)
-          saveDeleted()
-        }
-        const isPresetAdmin = ['super-admin', 'base-admin'].includes(item.id)
-        return !isPresetAdmin || !!item.lastMessage
-      })
+    contacts.value = sortContacts(
+      enriched
+        .filter(Boolean)
+        .filter(item => {
+          // 若服务器已返回该联系人，视为有效，移除本地删除标记（说明已重新建立联系）
+          if (item?.id && deletedSet.value.has(item.id)) {
+            deletedSet.value.delete(item.id)
+            saveDeleted()
+          }
+          const isPresetAdmin = ['super-admin', 'base-admin'].includes(item.id)
+          return !isPresetAdmin || !!item.lastMessage
+        })
+    )
 
     unreadCount.value = contacts.value.filter(c => c.isUnread).length
 
@@ -321,6 +357,27 @@ const fetchContacts = async () => {
   } catch (err) {
     console.error('获取联系人失败', err)
   }
+}
+
+const sortContacts = (list) => {
+  const arr = [...list]
+  const field = sortPref.value.field || 'updatedAt'
+  const orderFlag = (sortPref.value.order || 'desc') === 'asc' ? 1 : -1
+  const getKey = (c) => {
+    if (field === 'name') return (c.name || c.username || '').toLowerCase()
+    if (field === 'createdAt') return c.createdAt || c.created_at || 0
+    return c.updatedAt || c.updated_at || c.lastMessageAt || 0
+  }
+  arr.sort((a, b) => {
+    const ka = getKey(a)
+    const kb = getKey(b)
+    if (ka == null && kb == null) return 0
+    if (ka == null) return 1
+    if (kb == null) return -1
+    if (typeof ka === 'string' && typeof kb === 'string') return ka.localeCompare(kb) * orderFlag
+    return (new Date(ka).getTime() - new Date(kb).getTime()) * orderFlag
+  })
+  return arr
 }
 
 const fetchPendingRequests = async () => {
@@ -336,7 +393,12 @@ const fetchPendingRequests = async () => {
   }
 }
 
-const contactsList = computed(() => contacts.value)
+const contactsList = computed(() =>
+  contacts.value.map(c => ({
+    ...c,
+    name: remarks.value[c.id] || c.name
+  }))
+)
 
 const STORAGE_KEY = 'chatThreads'
 const READ_KEY = 'chatReadAt'

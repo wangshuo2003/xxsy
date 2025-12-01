@@ -148,12 +148,19 @@ router.post('/contacts', async (req, res) => {
 
 // 联系人列表
 router.get('/contacts', async (req, res) => {
+  const sortBy = ['name', 'createdAt', 'updatedAt'].includes(req.query.sortBy)
+    ? req.query.sortBy
+    : 'updatedAt'
+  const order = req.query.order === 'asc' ? 'asc' : 'desc'
+
+  const orderByClause = sortBy === 'name' ? undefined : { [sortBy]: order }
+
   const list = await prisma.contact.findMany({
     where: {
       status: 'ACTIVE',
       OR: [{ userA: req.user.id }, { userB: req.user.id }]
     },
-    orderBy: { updatedAt: 'desc' }
+    orderBy: orderByClause
   })
   const contacts = await Promise.all(
     list.map(async (c) => {
@@ -162,11 +169,17 @@ router.get('/contacts', async (req, res) => {
       return {
         id: other.username,
         name: other.name || other.username,
+        createdAt: c.createdAt,
         updatedAt: c.updatedAt
       }
     })
   )
-  res.json({ data: contacts })
+  // 若按姓名排序，在内存里处理（Prisma无法按关联字段排序）
+  const sorted = sortBy === 'name'
+    ? contacts.sort((a, b) => (a.name || '').localeCompare(b.name || '') * (order === 'asc' ? 1 : -1))
+    : contacts
+
+  res.json({ data: sorted })
 })
 
 // 删除联系人，可选择是否保留聊天记录
@@ -272,7 +285,8 @@ router.post('/contacts/:username/messages', async (req, res) => {
       content
     }
   })
-  await prisma.contact.update({ where: { id: contact.id }, data: { updatedAt: new Date() } })
+  // 用消息时间回写联系人更新时间，便于“最近聊天时间”排序
+  await prisma.contact.update({ where: { id: contact.id }, data: { updatedAt: msg.createdAt } })
   res.json({ ok: true, message: msg })
 })
 

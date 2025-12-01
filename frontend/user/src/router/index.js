@@ -171,6 +171,12 @@ const routes = [
         meta: { title: '更多', requiresAuth: true }
       },
       {
+        path: '/chat/remark',
+        name: 'ChatRemark',
+        component: () => import('@/views/ChatRemark.vue'),
+        meta: { title: '设置备注', requiresAuth: true }
+      },
+      {
         path: '/contacts/add',
         name: 'AddContact',
         component: () => import('@/views/AddContact.vue'),
@@ -197,6 +203,25 @@ const routes = [
         name: 'MessagesContacts',
         component: () => import('@/views/Messages.vue'),
         meta: { title: '联系人', requiresAuth: true }
+      },
+      {
+        path: '/messages/settings',
+        name: 'MessagesSettings',
+        component: () => import('@/views/MessagesSettings.vue'),
+        meta: { title: '消息设置', requiresAuth: true }
+      },
+      {
+        path: '/messages/me',
+        name: 'MessagesMe',
+        component: () => import('@/views/MessagesMe.vue'),
+        meta: { title: '我的信息', requiresAuth: true }
+      },
+      {
+        path: '/messages/me/edit/:field',
+        name: 'EditMyInfo',
+        component: () => import('@/views/EditMyInfo.vue'),
+        props: true,
+        meta: { title: '编辑信息', requiresAuth: true }
       }
     ]
   }
