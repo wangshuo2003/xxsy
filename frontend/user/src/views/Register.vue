@@ -37,15 +37,7 @@
             type="tel"
             placeholder="请输入家长手机号"
             :rules="[
-              { required: true, message: '请输入家长手机号' },
-              {
-                pattern: /^[\+]?[(]?[0-9]{1,4}[)]?[-\s\.]?[(]?[0-9]{1,4}[)]?[-\s\.]?[0-9]{1,9}$/,
-                message: '请输入有效的手机号（3-20位）'
-              },
-              {
-                validator: (val) => val.trim().length >= 3 && val.trim().length <= 20,
-                message: '手机号长度应在3-20个字符之间'
-              }
+              { required: true, message: '请输入家长手机号' }
             ]"
           />
           <van-field

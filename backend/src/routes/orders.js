@@ -664,6 +664,68 @@ router.post('/:id/refund', authMiddleware, [
   }
 })
 
+// 取消退款申请（用户操作）
+router.delete('/:id/refund', authMiddleware, async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.id)
+
+    // 获取订单信息
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        refunds: {
+          where: { status: 'PENDING' },
+          orderBy: { createdAt: 'desc' },
+          take: 1
+        }
+      }
+    })
+
+    if (!order) return res.status(404).json({ error: '订单不存在' })
+    if (order.userId !== req.user.id) return res.status(403).json({ error: '权限不足' })
+    if (order.status !== 'REFUNDING') return res.status(400).json({ error: '订单状态不是退款中' })
+
+    // 检查是否有待处理的退款申请
+    const pendingRefund = order.refunds[0]
+    if (!pendingRefund) {
+      return res.status(400).json({ error: '没有找到待处理的退款申请' })
+    }
+
+    // 使用事务处理取消退款
+    const result = await prisma.$transaction(async (tx) => {
+      // 更新退款申请状态为已拒绝（相当于用户主动取消）
+      const updatedRefund = await tx.refund.update({
+        where: { id: pendingRefund.id },
+        data: {
+          status: 'REJECTED',
+          decisionNote: '用户主动取消退款申请',
+          processedBy: req.user.id
+        }
+      })
+
+      // 恢复订单状态为已支付
+      const updatedOrder = await tx.order.update({
+        where: { id: orderId },
+        data: {
+          status: 'PAID'
+        }
+      })
+
+      return { refund: updatedRefund, order: updatedOrder }
+    })
+
+    res.json({
+      success: true,
+      message: '退款申请已取消',
+      data: result
+    })
+
+  } catch (error) {
+    console.error('取消退款申请失败:', error)
+    res.status(500).json({ error: '服务器错误' })
+  }
+})
+
 // 自动退款（用户操作，直接退款到余额）
 router.post('/:id/auto-refund', authMiddleware, async (req, res) => {
   try {

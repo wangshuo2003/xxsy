@@ -102,21 +102,11 @@ const handleSave = async () => {
 
     // 按需提交字段，避免全量提交
     if (field === 'all' || field === 'name') {
-      if (!form.value.name) {
-        showToast('请先填写姓名')
-        saving.value = false
-        return
-      }
-      payload.name = form.value.name
+      payload.name = form.value.name ?? ''
     }
 
     if (field === 'all' || field === 'phone') {
-      if (!form.value.phone) {
-        showToast('请先填写手机号')
-        saving.value = false
-        return
-      }
-      payload.phone = form.value.phone
+      payload.phone = form.value.phone ?? ''
     }
 
     if (field === 'all' || field === 'school') payload.school = form.value.school

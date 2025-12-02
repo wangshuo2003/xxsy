@@ -365,53 +365,21 @@ const handleEditProfile = async () => {
   console.log('==> handleEditProfile called')
   
   // 验证输入
-  if (!editForm.name) {
-    console.log('==> Validation failed: name is empty')
-    showToast({
-      message: '请输入姓名',
-      type: 'fail',
-      position: 'middle'
-    })
-    return
-  }
-
-  if (!editForm.phone) {
-    console.log('==> Validation failed: phone is empty')
-    showToast({
-      message: '请输入手机号',
-      type: 'fail',
-      position: 'middle'
-    })
-    return
-  }
-
-  // 验证手机号格式
-  const phoneRegex = /^[\+]?[(]?[0-9]{1,4}[)]?[-\s\.]?[(]?[0-9]{1,4}[)]?[-\s\.]?[0-9]{1,9}$/
-  if (!phoneRegex.test(editForm.phone.trim()) || editForm.phone.trim().length < 3 || editForm.phone.trim().length > 20) {
-    console.log('==> Validation failed: invalid phone format')
-    showToast({
-      message: '请输入有效的手机号（3-20位）',
-      type: 'fail',
-      position: 'middle'
-    })
-    return
-  }
-
   console.log('==> Validation passed, sending request...')
   
   try {
     editDialogLoading.value = true
     console.log('==> Loading started, request data:', {
       name: editForm.name,
-      phone: editForm.phone.trim()
+      phone: (editForm.phone || '').trim()
     })
     
     const payload = {
-      name: editForm.name.trim(),
-      phone: editForm.phone.trim(),
-      school: editForm.school.trim(),
-      grade: editForm.grade.trim(),
-      className: editForm.className.trim()
+      name: editForm.name?.trim() || '',
+      phone: (editForm.phone || '').trim(),
+      school: editForm.school?.trim() || '',
+      grade: editForm.grade?.trim() || '',
+      className: editForm.className?.trim() || ''
     }
 
     const response = await request.put('/auth/profile', payload)
@@ -675,6 +643,7 @@ onMounted(async () => {
 
 .logout-section {
   padding: 20px;
+  padding-bottom: calc(20px + env(safe-area-inset-bottom) + 60px); /* 为底部导航栏留出空间 */
 }
 
 .password-form {

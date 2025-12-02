@@ -87,9 +87,9 @@
                 v-else-if="isRegistered(activity)"
                 size="small"
                 :type="getRegisteredButtonType(activity)"
-                :plain="!isRegisteredUnpaid(activity)"
-                :disabled="!isRegisteredUnpaid(activity)"
-                @click.stop="handleRegister(activity)"
+                :plain="!isRegisteredUnpaid(activity) && !isRefunding(activity)"
+                :disabled="!isRegisteredUnpaid(activity) && !isRefunding(activity) && !isRefunded(activity)"
+                @click.stop="handleRegisteredActivityClick(activity)"
                 :loading="registering[activity.id]"
               >
                 {{ getRegisteredButtonText(activity) }}
@@ -134,6 +134,7 @@ import axios from 'axios'
 import { showSuccessToast, showDialog, showFailToast, showToast } from 'vant'
 import request from '@/api/request'
 import { getBingFallback } from '@/utils/bingFallback'
+import { optimizedRequest } from '@/utils/apiOptimizer'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -204,8 +205,15 @@ const fetchUserOrders = async () => {
   }
 
   try {
-    const response = await request.get('/orders', {
-      params: { page: 1, limit: 100 }
+    // 使用优化请求，添加缓存和去重
+    const response = await optimizedRequest('/orders', {
+      method: 'GET',
+      params: { page: 1, limit: 50 } // 减少数量，避免大数据量请求
+    }, {
+      cache: true,
+      cacheKey: `user-orders-${userStore.user?.id}`,
+      cacheDuration: 5 * 60 * 1000, // 5分钟缓存
+      deduplication: true
     })
     userOrders.value = response.data || []
   } catch (error) {
@@ -339,6 +347,21 @@ const isFull = (activity) => {
 
 // 检查是否可以报名
 const canRegister = (activity) => {
+  // 如果申请退款中（REFUNDING），不能重新报名，只能取消退款
+  if (activity.order?.status === 'REFUNDING') {
+    return false
+  }
+
+  // 如果已退款（REFUNDED），允许重新报名
+  if (activity.order?.status === 'REFUNDED') {
+    return (
+      activity.isApproved &&
+      activity.isActive &&
+      !isExpired(activity) &&
+      !isFull(activity)
+    )
+  }
+
   return (
     activity.isApproved &&
     activity.isActive &&
@@ -350,8 +373,8 @@ const canRegister = (activity) => {
 
 // 检查用户是否已报名
 const isRegistered = (activity) => {
-  // 检查activity对象中是否有registrationStatus字段
-  return activity.registrationStatus !== undefined
+  // 检查activity对象中是否有registrationStatus字段，或者有订单信息
+  return activity.registrationStatus !== undefined || activity.order !== null
 }
 
 // 检查是否已支付
@@ -374,11 +397,23 @@ const isRegisteredUnpaid = (activity) => {
   return hasPendingOrder || unpaidByRegistration
 }
 
+// 检查是否退款审核中
+const isRefunding = (activity) => {
+  const order = getActivityOrder(activity)
+  return order?.status === 'REFUNDING'
+}
+
+// 检查是否已退款
+const isRefunded = (activity) => {
+  const order = getActivityOrder(activity)
+  return order?.status === 'REFUNDED'
+}
+
 // 获取已报名活动的按钮文本
 const getRegisteredButtonText = (activity) => {
   const order = getActivityOrder(activity)
   if (order?.status === 'REFUNDING') {
-    return '退款审核中'
+    return '取消退款'
   } else if (order?.status === 'REFUNDED') {
     return '已退款'
   } else if (hasPaidForActivity(activity)) {
@@ -414,6 +449,78 @@ const getRegisteredButtonType = (activity) => {
     }
     return typeMap[activity.registrationStatus] || 'default'
   }
+}
+
+// 处理已报名活动的点击事件
+const handleRegisteredActivityClick = async (activity) => {
+  // 检查用户是否登录
+  if (!userStore.isLoggedIn) {
+    showDialog({
+      message: '请先登录',
+      confirmButtonText: '知道了'
+    }).then(() => {
+      router.push('/login')
+    })
+    return
+  }
+
+  // 如果未支付，跳转到支付页面
+  if (isRegisteredUnpaid(activity)) {
+    const price = activity.price || 0
+    router.push({
+      path: '/payment',
+      query: {
+        type: 'activity',
+        id: activity.id,
+        name: activity.name,
+        price: price,
+        image: activity.coverImage || getBingFallback(),
+        orderId: activity.order.id
+      }
+    })
+    return
+  }
+
+  // 如果退款审核中，执行取消退款操作
+  if (isRefunding(activity)) {
+    try {
+      registering.value[activity.id] = true
+
+      // 复制ActivityDetail中的取消退款逻辑
+      const order = getActivityOrder(activity)
+      if (!order) {
+        showToast('订单信息不存在')
+        return
+      }
+
+      await axios.delete(`/api/orders/${order.id}/refund`, {
+        headers: {
+          'Authorization': `Bearer ${userStore.token}`
+        }
+      })
+
+      showSuccessToast('已取消退款申请')
+
+      // 刷新订单数据
+      await fetchUserOrders()
+
+    } catch (error) {
+      console.error('取消退款失败:', error)
+      showToast(error.response?.data?.error || '取消退款失败')
+    } finally {
+      registering.value[activity.id] = false
+    }
+    return
+  }
+
+  // 如果已退款，跳转到详情页重新报名
+  if (isRefunded(activity)) {
+    goToDetail(activity.id)
+    return
+  }
+
+  // 其他情况跳转到详情页
+  goToDetail(activity.id)
 }
 
 // 跳转到详情页

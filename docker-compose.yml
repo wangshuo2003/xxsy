@@ -6,7 +6,7 @@ services:
       MYSQL_ROOT_PASSWORD: 9
       MYSQL_DATABASE: education_platform
     ports:
-      - "3306:3306"
+      - "33306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:

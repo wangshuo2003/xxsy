@@ -76,6 +76,36 @@
           {{ formatDate(row.createdAt) }}
         </template>
       </el-table-column>
+      <el-table-column label="操作" width="200" fixed="right">
+        <template #default="{ row }">
+          <el-button
+            type="primary"
+            link
+            size="small"
+            @click="handleAwardConfig(row)"
+          >
+            奖项配置
+          </el-button>
+          <el-button
+            type="primary"
+            link
+            size="small"
+            @click="handleEdit(row)"
+            v-if="canEdit(row)"
+          >
+            编辑
+          </el-button>
+          <el-button
+            type="danger"
+            link
+            size="small"
+            @click="handleDelete(row)"
+            v-if="canDelete(row)"
+          >
+            删除
+          </el-button>
+        </template>
+      </el-table-column>
     </el-table>
 
     <!-- 分页 -->
@@ -354,6 +384,111 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 奖项配置对话框 -->
+    <el-dialog
+      v-model="awardConfigVisible"
+      :title="`奖项配置 - ${currentAwardActivity?.name}`"
+      width="800px"
+      top="5vh"
+    >
+      <div class="award-config-content">
+        <div class="award-toolbar">
+          <el-button type="primary" @click="handleAddAward" icon="Plus">添加奖项</el-button>
+          <el-button @click="loadAwards(currentAwardActivity.id)" icon="Refresh">刷新</el-button>
+        </div>
+
+        <el-table
+          :data="awards"
+          v-loading="awardConfigLoading"
+          style="width: 100%"
+          max-height="400px"
+        >
+          <el-table-column prop="name" label="奖项名称" min-width="150" />
+          <el-table-column prop="description" label="描述" min-width="200" show-overflow-tooltip />
+          <el-table-column prop="priority" label="优先级" width="100" />
+          <el-table-column label="状态" width="100">
+            <template #default="{ row }">
+              <el-tag :type="row.isActive ? 'success' : 'info'">
+                {{ row.isActive ? '启用' : '禁用' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="150" fixed="right">
+            <template #default="{ row }">
+              <el-button
+                type="primary"
+                link
+                size="small"
+                @click="handleEditAward(row)"
+              >
+                编辑
+              </el-button>
+              <el-button
+                type="danger"
+                link
+                size="small"
+                @click="handleDeleteAward(row)"
+              >
+                删除
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <div class="award-notice" v-if="awards.length === 0">
+          <el-empty description="暂无奖项配置" />
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="awardConfigVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 奖项添加/编辑对话框 -->
+    <el-dialog
+      v-model="awardFormVisible"
+      :title="isAwardEdit ? '编辑奖项' : '添加奖项'"
+      width="500px"
+    >
+      <el-form
+        :model="awardFormData"
+        label-width="80px"
+      >
+        <el-form-item label="奖项名称" prop="name">
+          <el-input
+            v-model="awardFormData.name"
+            placeholder="请输入奖项名称"
+            maxlength="50"
+          />
+        </el-form-item>
+        <el-form-item label="描述" prop="description">
+          <el-input
+            v-model="awardFormData.description"
+            type="textarea"
+            :rows="3"
+            placeholder="请输入奖项描述（可选）"
+            maxlength="200"
+            show-word-limit
+          />
+        </el-form-item>
+        <el-form-item label="优先级" prop="priority">
+          <el-input-number
+            v-model="awardFormData.priority"
+            :min="0"
+            :max="999"
+            placeholder="请输入优先级"
+          />
+          <div class="form-tip">优先级越高，奖项冲突时优先级越高</div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="awardFormVisible = false">取消</el-button>
+        <el-button type="primary" @click="submitAwardForm" :loading="awardConfigLoading">
+          确定
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -393,6 +528,21 @@ const noteSubmitting = ref(false)
 const currentRegistration = ref(null)
 const noteDialogTitle = ref('管理员备注')
 const noteDialogEditable = ref(false)
+
+// 奖项配置相关
+const awardConfigVisible = ref(false)
+const awardConfigLoading = ref(false)
+const currentAwardActivity = ref(null)
+const awards = ref([])
+const awardFormVisible = ref(false)
+const isAwardEdit = ref(false)
+const awardFormData = reactive({
+  id: null,
+  activityId: null,
+  name: '',
+  description: '',
+  priority: 0
+})
 
 // 可用基地
 const availableBases = ref([])
@@ -573,6 +723,96 @@ const handleEdit = (activity) => {
   })
   loadActivityRegistrations(activity.id)
   formVisible.value = true
+}
+
+// 奖项配置
+const handleAwardConfig = async (activity) => {
+  currentAwardActivity.value = activity
+  awardConfigVisible.value = true
+  await loadAwards(activity.id)
+}
+
+// 加载奖项列表
+const loadAwards = async (activityId) => {
+  awardConfigLoading.value = true
+  try {
+    const response = await request.get(`/activities/${activityId}/awards`)
+    awards.value = response.data || []
+  } catch (error) {
+    console.error('加载奖项失败:', error)
+    ElMessage.error('加载奖项失败')
+    awards.value = []
+  } finally {
+    awardConfigLoading.value = false
+  }
+}
+
+// 添加奖项
+const handleAddAward = () => {
+  isAwardEdit.value = false
+  Object.assign(awardFormData, {
+    id: null,
+    activityId: currentAwardActivity.value.id,
+    name: '',
+    description: '',
+    priority: 0
+  })
+  awardFormVisible.value = true
+}
+
+// 编辑奖项
+const handleEditAward = (award) => {
+  isAwardEdit.value = true
+  Object.assign(awardFormData, {
+    id: award.id,
+    activityId: award.activityId,
+    name: award.name,
+    description: award.description,
+    priority: award.priority
+  })
+  awardFormVisible.value = true
+}
+
+// 删除奖项
+const handleDeleteAward = async (award) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除奖项 "${award.name}" 吗？`,
+      '确认删除',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    await request.delete(`/activities/${award.activityId}/awards/${award.id}`)
+    ElMessage.success('删除成功')
+    await loadAwards(currentAwardActivity.value.id)
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除奖项失败:', error)
+      ElMessage.error('删除奖项失败')
+    }
+  }
+}
+
+// 提交奖项表单
+const submitAwardForm = async () => {
+  try {
+    if (isAwardEdit.value) {
+      await request.put(`/activities/${awardFormData.activityId}/awards/${awardFormData.id}`, awardFormData)
+      ElMessage.success('更新成功')
+    } else {
+      await request.post(`/activities/${awardFormData.activityId}/awards`, awardFormData)
+      ElMessage.success('添加成功')
+    }
+    awardFormVisible.value = false
+    await loadAwards(currentAwardActivity.value.id)
+  } catch (error) {
+    console.error('提交奖项失败:', error)
+    ElMessage.error('提交奖项失败')
+  }
 }
 
 // 加载活动报名数据
@@ -878,5 +1118,29 @@ onMounted(() => {
 :deep(.registration-dialog .el-table__cell) {
   padding-top: 0;
   padding-bottom: 0;
+}
+
+/* 奖项配置相关样式 */
+.award-config-content {
+  padding: 0;
+}
+
+.award-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 0;
+}
+
+.award-notice {
+  text-align: center;
+  padding: 40px 0;
+}
+
+.form-tip {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 4px;
 }
 </style>

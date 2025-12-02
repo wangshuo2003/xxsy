@@ -4,58 +4,61 @@
       <van-loading type="spinner" size="24px">加载中...</van-loading>
     </div>
 
-    <div v-else-if="activity" class="content">
-      <!-- 活动图片 -->
-      <div class="activity-image">
-        <img :src="activity.coverImage || bingFallback" :alt="activity.name" />
-      </div>
-
-      <!-- 活动信息 -->
-      <div class="activity-info">
-        <h1>{{ activity.name }}</h1>
-
-        <div class="tags">
-          <van-tag type="primary" size="large">{{ activity.type }}</van-tag>
-          <van-tag
-            :type="getStatusType(activity)"
-            size="large"
-            style="margin-left: 8px;"
-          >
-            {{ getStatusText(activity) }}
-          </van-tag>
+    <div v-else-if="activity" class="content-wrapper">
+      <!-- 滚动内容区域 -->
+      <div class="scrollable-content">
+        <!-- 活动图片 -->
+        <div class="activity-image">
+          <img :src="activity.coverImage || bingFallback" :alt="activity.name" />
         </div>
 
-        <div class="info-grid">
-          <div class="info-item">
-            <van-icon name="clock-o" size="16" />
-            <span>{{ formatDateTime(activity.time) }}</span>
+        <!-- 活动信息 -->
+        <div class="activity-info">
+          <h1>{{ activity.name }}</h1>
+
+          <div class="tags">
+            <van-tag type="primary" size="large">{{ activity.type }}</van-tag>
+            <van-tag
+              :type="getStatusType(activity)"
+              size="large"
+              style="margin-left: 8px;"
+            >
+              {{ getStatusText(activity) }}
+            </van-tag>
           </div>
-          <div class="info-item">
-            <van-icon name="location-o" size="16" />
-            <span>{{ activity.location }}</span>
+
+          <div class="info-grid">
+            <div class="info-item">
+              <van-icon name="clock-o" size="16" />
+              <span>{{ formatDateTime(activity.time) }}</span>
+            </div>
+            <div class="info-item">
+              <van-icon name="location-o" size="16" />
+              <span>{{ activity.location }}</span>
+            </div>
+            <div class="info-item" v-if="activity.base?.name">
+              <van-icon name="hotel-o" size="16" />
+              <span>{{ activity.base.name }}</span>
+            </div>
+            <div class="info-item" v-if="activity.maxPeople">
+              <van-icon name="friends-o" size="16" />
+              <span>{{ activity._count?.users || 0 }}/{{ activity.maxPeople }}人</span>
+            </div>
+            <div class="info-item price-item">
+              <van-icon name="gold-coin-o" size="16" />
+              <span class="price">¥{{ activity.price || 0 }}</span>
+            </div>
           </div>
-          <div class="info-item" v-if="activity.base?.name">
-            <van-icon name="hotel-o" size="16" />
-            <span>{{ activity.base.name }}</span>
-          </div>
-          <div class="info-item" v-if="activity.maxPeople">
-            <van-icon name="friends-o" size="16" />
-            <span>{{ activity._count?.users || 0 }}/{{ activity.maxPeople }}人</span>
-          </div>
-          <div class="info-item price-item">
-            <van-icon name="gold-coin-o" size="16" />
-            <span class="price">¥{{ activity.price || 0 }}</span>
+
+          <!-- 活动描述 -->
+          <div class="description" v-if="activity.description">
+            <h3>活动介绍</h3>
+            <div class="description-content" v-html="activity.description"></div>
           </div>
         </div>
-
-        <!-- 活动描述 -->
-      <div class="description" v-if="activity.description">
-        <h3>活动介绍</h3>
-        <div class="description-content" v-html="activity.description"></div>
       </div>
-    </div>
 
-    <!-- 底部操作栏：弹出退款对话框时直接移除，避免遮挡弹窗按钮 -->
+      <!-- 底部操作栏：固定在内容区域下方 -->
       <div v-if="!showRefundDialog" class="bottom-bar">
         <van-button
           class="favorite-button"
@@ -114,9 +117,10 @@
               type="warning"
               size="large"
               block
-              disabled
+              @click="handleCancelRefund"
+              :loading="cancelingRefund"
             >
-              退款审核中
+              取消退款
             </van-button>
             <van-button
               v-else-if="order.status === 'REFUNDED'"
@@ -197,7 +201,7 @@
 import { ref, onMounted, watch, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
-import { showToast, showSuccessToast } from 'vant'
+import { showToast, showSuccessToast, showConfirmDialog } from 'vant'
 import axios from 'axios'
 import request from '@/api/request'
 import { getBingFallback } from '@/utils/bingFallback'
@@ -212,6 +216,7 @@ const loading = ref(true)
 const registering = ref(false)
 const canceling = ref(false) // 取消报名loading状态
 const refunding = ref(false) // 退款loading状态
+const cancelingRefund = ref(false) // 取消退款loading状态
 const order = ref(null) // 从URL获取的特定订单
 const userOrders = ref([]) // 用户的订单列表，用于查找特定订单
 const isFavorited = ref(false) // 是否已收藏
@@ -521,6 +526,41 @@ const handleCloseRefundDialog = () => {
   }
 }
 
+const handleCancelRefund = async () => {
+  if (!order.value) {
+    showToast('找不到可取消的订单')
+    return
+  }
+  if (cancelingRefund.value) return
+
+  if (order.value.status !== 'REFUNDING') {
+    showToast('订单状态不正确，无法取消退款')
+    return
+  }
+
+  // 显示确认对话框
+  showConfirmDialog({
+    title: '确认取消',
+    message: '确定要取消退款申请吗？取消后订单将恢复为已支付状态。',
+    confirmButtonText: '确定取消',
+    cancelButtonText: '再想想'
+  }).then(async () => {
+    try {
+      cancelingRefund.value = true
+      await request.delete(`/orders/${order.value.id}/refund`)
+      showSuccessToast('退款申请已取消')
+      await fetchPageData() // 刷新页面数据
+    } catch (error) {
+      console.error('取消退款失败:', error)
+      showToast(error.response?.data?.error || '取消退款失败，请稍后重试')
+    } finally {
+      cancelingRefund.value = false
+    }
+  }).catch(() => {
+    // 用户点击了取消，不执行任何操作
+  })
+}
+
 onMounted(() => {
   fetchPageData()
 })
@@ -540,6 +580,13 @@ watch(() => route.params.orderId, (newOrderId, oldOrderId) => {
   flex-direction: column;
 }
 
+.content-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .loading {
   display: flex;
   justify-content: center;
@@ -547,12 +594,11 @@ watch(() => route.params.orderId, (newOrderId, oldOrderId) => {
   height: 200px;
 }
 
-.content {
-  background-color: white;
+.scrollable-content {
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background-color: white;
 }
 
 .activity-image {
@@ -600,9 +646,11 @@ watch(() => route.params.orderId, (newOrderId, oldOrderId) => {
   color: #999;
 }
 
+
 .description {
   border-top: 1px solid #f0f0f0;
   padding-top: 16px;
+  margin-bottom: 20px; /* 为底部间距 */
 }
 
 .description h3 {
@@ -636,10 +684,7 @@ watch(() => route.params.orderId, (newOrderId, oldOrderId) => {
 }
 
 .bottom-bar {
-  position: sticky;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  position: relative;
   background-color: white;
   padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
   box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
@@ -647,6 +692,7 @@ watch(() => route.params.orderId, (newOrderId, oldOrderId) => {
   display: flex;
   align-items: stretch;
   gap: 12px;
+  flex-shrink: 0;
 }
 
 :deep(.van-overlay) {

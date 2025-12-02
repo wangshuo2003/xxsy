@@ -124,7 +124,7 @@ router.get('/my-registrations', authMiddleware, async (req, res) => {
       where: {
         userId: req.user.id,
         activityId: { in: activityIds },
-        status: { in: ['PENDING', 'PAID', 'REFUNDED'] }
+        status: { in: ['PENDING', 'PAID', 'REFUNDING', 'REFUNDED'] }
       },
       select: {
         id: true,
@@ -256,9 +256,135 @@ router.get('/stats/overview', authMiddleware, async (req, res) => {
   }
 })
 
+// 获取用户活动成果展示
+router.get('/my-achievements', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // 获取用户参与的所有活动及其成绩、奖项信息
+    const userActivities = await prisma.userActivity.findMany({
+      where: {
+        userId,
+        status: 'APPROVED' // 只显示已通过审核的报名
+      },
+      include: {
+        activity: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            time: true,
+            location: true,
+            isActive: true
+          }
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    // 获取这些活动的成绩信息
+    const activityIds = userActivities.map(ua => ua.activityId);
+    const userScores = await prisma.userActivityScore.findMany({
+      where: {
+        userId,
+        activityId: {
+          in: activityIds
+        }
+      }
+    });
+
+    // 获取用户的奖项记录
+    const awardRecords = await prisma.awardRecord.findMany({
+      where: { userId },
+      include: {
+        award: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            priority: true
+          }
+        },
+        activity: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            time: true,
+            isActive: true
+          }
+        }
+      },
+      orderBy: {
+        issuedAt: 'desc'
+      }
+    });
+
+    // 构建响应数据
+    const achievements = userActivities.map(userActivity => {
+      const scoreRecord = userScores.find(score => score.activityId === userActivity.activity.id);
+      const scores = scoreRecord || { score: 0, rank: null, isFinal: false };
+      const activityAwards = awardRecords.filter(record => record.activityId === userActivity.activity.id);
+
+      // 判断活动状态
+      let awardStatus = 'pending';
+      if (!userActivity.activity.isActive) {
+        // 活动已结束
+        if (activityAwards.length > 0) {
+          awardStatus = 'issued';
+        } else if (scores.isFinal) {
+          awardStatus = 'settled';
+        } else {
+          awardStatus = 'pending_settlement';
+        }
+      }
+
+      return {
+        activity: {
+          id: userActivity.activity.id,
+          name: userActivity.activity.name,
+          type: userActivity.activity.type,
+          time: userActivity.activity.time,
+          location: userActivity.activity.location,
+          isActive: userActivity.activity.isActive
+        },
+        score: scores.score,
+        rank: scores.rank,
+        awards: activityAwards.map(record => ({
+          id: record.award.id,
+          name: record.award.name,
+          description: record.award.description,
+          priority: record.award.priority,
+          type: record.awardType,
+          issuedAt: record.issuedAt
+        })),
+        awardStatus,
+        isFinal: scores.isFinal
+      };
+    });
+
+    res.json({
+      data: achievements,
+      total: achievements.length
+    });
+  } catch (error) {
+    console.error('获取用户活动成果失败:', error);
+    console.error('Error name:', error.name);
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ error: '服务器错误', details: error.message });
+  }
+});
+
 // 获取单个活动详情
 router.get('/:id', async (req, res) => {
   try {
+    console.log('获取单个活动详情, id:', req.params.id);
+    if (!req.params.id) {
+      return res.status(400).json({ error: '活动ID不能为空' });
+    }
     const activity = await prisma.activity.findUnique({
       where: { id: parseInt(req.params.id) },
       include: {
@@ -783,4 +909,944 @@ router.delete('/:id', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_A
   }
 })
 
-module.exports = router
+// 获取单个活动成果详情
+router.get('/:id/achievement', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const activityId = parseInt(req.params.id);
+
+    // 检查用户是否参与了该活动
+    const userActivity = await prisma.userActivity.findUnique({
+      where: {
+        userId_activityId: {
+          userId,
+          activityId
+        }
+      },
+      include: {
+        activity: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            time: true,
+            location: true,
+            isActive: true,
+            description: true
+          }
+        }
+      }
+    });
+
+    // 获取用户的成绩信息
+    const userScore = await prisma.userActivityScore.findUnique({
+      where: {
+        userId_activityId: {
+          userId,
+          activityId
+        }
+      }
+    });
+
+    if (!userActivity) {
+      return res.status(404).json({ error: '未找到该活动的参与记录' });
+    }
+
+    // 获取该活动的所有奖项记录
+    const awardRecords = await prisma.awardRecord.findMany({
+      where: {
+        userId,
+        activityId
+      },
+      include: {
+        award: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            priority: true
+          }
+        },
+        issuer: {
+          select: {
+            name: true
+          }
+        }
+      },
+      orderBy: {
+        issuedAt: 'desc'
+      }
+    });
+
+    const scores = userScore || { score: 0, rank: null, isFinal: false };
+
+    // 判断活动状态
+    let awardStatus = 'pending';
+    if (!userActivity.activity.isActive) {
+      // 活动已结束
+      if (awardRecords.length > 0) {
+        awardStatus = 'issued';
+      } else if (scores.isFinal) {
+        awardStatus = 'pending_settlement';
+      } else {
+        awardStatus = 'pending_settlement';
+      }
+    }
+
+    res.json({
+      data: {
+        activity: {
+          id: userActivity.activity.id,
+          name: userActivity.activity.name,
+          type: userActivity.activity.type,
+          time: userActivity.activity.time,
+          location: userActivity.activity.location,
+          description: userActivity.activity.description,
+          isActive: userActivity.activity.isActive
+        },
+        participation: {
+          status: userActivity.status,
+          createdAt: userActivity.createdAt
+        },
+        score: scores.score,
+        rank: scores.rank,
+        awards: awardRecords.map(record => ({
+          id: record.award.id,
+          name: record.award.name,
+          description: record.award.description,
+          priority: record.award.priority,
+          type: record.awardType,
+          issuedAt: record.issuedAt,
+          issuedBy: record.issuer?.name || null
+        })),
+        awardStatus,
+        isFinal: scores.isFinal
+      }
+    });
+  } catch (error) {
+    console.error('获取活动成果详情失败:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+});
+
+// 获取活动奖项列表
+router.get('/:id/awards', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMIN']), async (req, res) => {
+  try {
+    const activityId = parseInt(req.params.id);
+
+    // 检查活动是否存在
+    const activity = await prisma.activity.findUnique({
+      where: { id: activityId },
+      select: { id: true, name: true }
+    });
+
+    if (!activity) {
+      return res.status(404).json({ error: '活动不存在' });
+    }
+
+    const awards = await prisma.activityAward.findMany({
+      where: {
+        activityId,
+        isActive: true
+      },
+      orderBy: [
+        { priority: 'desc' },
+        { createdAt: 'asc' }
+      ]
+    });
+
+    res.json({ data: awards });
+  } catch (error) {
+    console.error('获取活动奖项失败:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+});
+
+// 创建活动奖项
+router.post('/:id/awards', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMIN']), async (req, res) => {
+  try {
+    const activityId = parseInt(req.params.id);
+    const { name, description, priority = 0 } = req.body;
+
+    // 验证输入
+    if (!name || name.trim().length === 0) {
+      return res.status(400).json({ error: '奖项名称不能为空' });
+    }
+
+    if (name.length > 50) {
+      return res.status(400).json({ error: '奖项名称不能超过50个字符' });
+    }
+
+    if (description && description.length > 200) {
+      return res.status(400).json({ error: '奖项描述不能超过200个字符' });
+    }
+
+    // 检查活动是否存在
+    const activity = await prisma.activity.findUnique({
+      where: { id: activityId },
+      select: { id: true, name: true }
+    });
+
+    if (!activity) {
+      return res.status(404).json({ error: '活动不存在' });
+    }
+
+    // 创建奖项
+    const award = await prisma.activityAward.create({
+      data: {
+        activityId,
+        name: name.trim(),
+        description: description?.trim() || null,
+        priority: parseInt(priority) || 0,
+        isActive: true
+      }
+    });
+
+    res.status(201).json({
+      message: '奖项创建成功',
+      data: award
+    });
+  } catch (error) {
+    console.error('创建活动奖项失败:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+});
+
+// 更新活动奖项
+router.put('/:id/awards/:awardId', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMIN']), async (req, res) => {
+  try {
+    const activityId = parseInt(req.params.id);
+    const awardId = parseInt(req.params.awardId);
+    const { name, description, priority = 0, isActive } = req.body;
+
+    // 验证输入
+    if (!name || name.trim().length === 0) {
+      return res.status(400).json({ error: '奖项名称不能为空' });
+    }
+
+    if (name.length > 50) {
+      return res.status(400).json({ error: '奖项名称不能超过50个字符' });
+    }
+
+    if (description && description.length > 200) {
+      return res.status(400).json({ error: '奖项描述不能超过200个字符' });
+    }
+
+    // 检查奖项是否存在
+    const existingAward = await prisma.activityAward.findFirst({
+      where: {
+        id: awardId,
+        activityId
+      }
+    });
+
+    if (!existingAward) {
+      return res.status(404).json({ error: '奖项不存在' });
+    }
+
+    // 更新奖项
+    const award = await prisma.activityAward.update({
+      where: { id: awardId },
+      data: {
+        name: name.trim(),
+        description: description?.trim() || null,
+        priority: parseInt(priority) || 0,
+        isActive: isActive !== undefined ? Boolean(isActive) : existingAward.isActive
+      }
+    });
+
+    res.json({
+      message: '奖项更新成功',
+      data: award
+    });
+  } catch (error) {
+    console.error('更新活动奖项失败:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+});
+
+// 删除活动奖项
+router.delete('/:id/awards/:awardId', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMIN']), async (req, res) => {
+  try {
+    const activityId = parseInt(req.params.id);
+    const awardId = parseInt(req.params.awardId);
+
+    // 检查奖项是否存在
+    const existingAward = await prisma.activityAward.findFirst({
+      where: {
+        id: awardId,
+        activityId
+      }
+    });
+
+    if (!existingAward) {
+      return res.status(404).json({ error: '奖项不存在' });
+    }
+
+    // 删除奖项（软删除，将isActive设为false）
+    await prisma.activityAward.update({
+      where: { id: awardId },
+      data: { isActive: false }
+    });
+
+    res.json({ message: '奖项删除成功' });
+  } catch (error) {
+    console.error('删除活动奖项失败:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+});
+
+// 获取活动发奖规则列表
+router.get('/:id/award-rules', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMIN']), async (req, res) => {
+  try {
+    const activityId = parseInt(req.params.id);
+
+    // 检查活动是否存在
+    const activity = await prisma.activity.findUnique({
+      where: { id: activityId },
+      select: { id: true, name: true }
+    });
+
+    if (!activity) {
+      return res.status(404).json({ error: '活动不存在' });
+    }
+
+    const rules = await prisma.awardRule.findMany({
+      where: {
+        award: {
+          activityId,
+          isActive: true
+        },
+        isActive: true
+      },
+      include: {
+        award: {
+          select: {
+            id: true,
+            name: true,
+            priority: true
+          }
+        }
+      },
+      orderBy: [
+        { award: { priority: 'desc' } },
+        { createdAt: 'asc' }
+      ]
+    });
+
+    res.json({ data: rules });
+  } catch (error) {
+    console.error('获取发奖规则失败:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+});
+
+// 创建发奖规则
+router.post('/:id/award-rules', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMIN']), async (req, res) => {
+  try {
+    const activityId = parseInt(req.params.id);
+    const { awardId, ruleType, minScore, maxScore, minRank, maxRank } = req.body;
+
+    // 验证输入
+    if (!awardId) {
+      return res.status(400).json({ error: '奖项ID不能为空' });
+    }
+
+    if (!ruleType || !['SCORE_RANGE', 'RANK_RANGE'].includes(ruleType)) {
+      return res.status(400).json({ error: '规则类型无效' });
+    }
+
+    // 检查奖项是否属于该活动且有效
+    const award = await prisma.activityAward.findFirst({
+      where: {
+        id: awardId,
+        activityId,
+        isActive: true
+      }
+    });
+
+    if (!award) {
+      return res.status(404).json({ error: '奖项不存在或已禁用' });
+    }
+
+    // 验证规则参数
+    if (ruleType === 'SCORE_RANGE') {
+      if (minScore === undefined || maxScore === undefined) {
+        return res.status(400).json({ error: '分数范围规则需要指定最小和最大分数' });
+      }
+      if (minScore > maxScore) {
+        return res.status(400).json({ error: '最小分数不能大于最大分数' });
+      }
+      if (minScore < 0 || maxScore < 0) {
+        return res.status(400).json({ error: '分数不能为负数' });
+      }
+    } else if (ruleType === 'RANK_RANGE') {
+      if (minRank === undefined || maxRank === undefined) {
+        return res.status(400).json({ error: '排名范围规则需要指定最小和最大排名' });
+      }
+      if (minRank > maxRank) {
+        return res.status(400).json({ error: '最小排名不能大于最大排名' });
+      }
+      if (minRank < 1 || maxRank < 1) {
+        return res.status(400).json({ error: '排名必须为正整数' });
+      }
+    }
+
+    // 创建规则
+    const rule = await prisma.awardRule.create({
+      data: {
+        awardId,
+        ruleType,
+        minScore: ruleType === 'SCORE_RANGE' ? parseInt(minScore) : null,
+        maxScore: ruleType === 'SCORE_RANGE' ? parseInt(maxScore) : null,
+        minRank: ruleType === 'RANK_RANGE' ? parseInt(minRank) : null,
+        maxRank: ruleType === 'RANK_RANGE' ? parseInt(maxRank) : null,
+        isActive: true
+      },
+      include: {
+        award: {
+          select: {
+            id: true,
+            name: true,
+            priority: true
+          }
+        }
+      }
+    });
+
+    res.status(201).json({
+      message: '发奖规则创建成功',
+      data: rule
+    });
+  } catch (error) {
+    console.error('创建发奖规则失败:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+});
+
+// 更新发奖规则
+router.put('/:id/award-rules/:ruleId', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMIN']), async (req, res) => {
+  try {
+    const activityId = parseInt(req.params.id);
+    const ruleId = parseInt(req.params.ruleId);
+    const { awardId, ruleType, minScore, maxScore, minRank, maxRank, isActive } = req.body;
+
+    // 检查规则是否存在且属于该活动
+    const existingRule = await prisma.awardRule.findFirst({
+      where: {
+        id: ruleId,
+        award: {
+          activityId
+        }
+      },
+      include: {
+        award: true
+      }
+    });
+
+    if (!existingRule) {
+      return res.status(404).json({ error: '发奖规则不存在' });
+    }
+
+    // 如果更换了奖项，检查新奖项是否有效
+    if (awardId && awardId !== existingRule.awardId) {
+      const newAward = await prisma.activityAward.findFirst({
+        where: {
+          id: awardId,
+          activityId,
+          isActive: true
+        }
+      });
+
+      if (!newAward) {
+        return res.status(404).json({ error: '新奖项不存在或已禁用' });
+      }
+    }
+
+    // 验证规则参数
+    const finalRuleType = ruleType || existingRule.ruleType;
+
+    if (finalRuleType === 'SCORE_RANGE') {
+      const finalMinScore = minScore !== undefined ? parseInt(minScore) : existingRule.minScore;
+      const finalMaxScore = maxScore !== undefined ? parseInt(maxScore) : existingRule.maxScore;
+
+      if (finalMinScore > finalMaxScore) {
+        return res.status(400).json({ error: '最小分数不能大于最大分数' });
+      }
+      if (finalMinScore < 0 || finalMaxScore < 0) {
+        return res.status(400).json({ error: '分数不能为负数' });
+      }
+    } else if (finalRuleType === 'RANK_RANGE') {
+      const finalMinRank = minRank !== undefined ? parseInt(minRank) : existingRule.minRank;
+      const finalMaxRank = maxRank !== undefined ? parseInt(maxRank) : existingRule.maxRank;
+
+      if (finalMinRank > finalMaxRank) {
+        return res.status(400).json({ error: '最小排名不能大于最大排名' });
+      }
+      if (finalMinRank < 1 || finalMaxRank < 1) {
+        return res.status(400).json({ error: '排名必须为正整数' });
+      }
+    }
+
+    // 更新规则
+    const rule = await prisma.awardRule.update({
+      where: { id: ruleId },
+      data: {
+        awardId: awardId || existingRule.awardId,
+        ruleType: finalRuleType,
+        minScore: finalRuleType === 'SCORE_RANGE' ? (minScore !== undefined ? parseInt(minScore) : existingRule.minScore) : null,
+        maxScore: finalRuleType === 'SCORE_RANGE' ? (maxScore !== undefined ? parseInt(maxScore) : existingRule.maxScore) : null,
+        minRank: finalRuleType === 'RANK_RANGE' ? (minRank !== undefined ? parseInt(minRank) : existingRule.minRank) : null,
+        maxRank: finalRuleType === 'RANK_RANGE' ? (maxRank !== undefined ? parseInt(maxRank) : existingRule.maxRank) : null,
+        isActive: isActive !== undefined ? Boolean(isActive) : existingRule.isActive
+      },
+      include: {
+        award: {
+          select: {
+            id: true,
+            name: true,
+            priority: true
+          }
+        }
+      }
+    });
+
+    res.json({
+      message: '发奖规则更新成功',
+      data: rule
+    });
+  } catch (error) {
+    console.error('更新发奖规则失败:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+});
+
+// 删除发奖规则
+router.delete('/:id/award-rules/:ruleId', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMIN']), async (req, res) => {
+  try {
+    const activityId = parseInt(req.params.id);
+    const ruleId = parseInt(req.params.ruleId);
+
+    // 检查规则是否存在且属于该活动
+    const existingRule = await prisma.awardRule.findFirst({
+      where: {
+        id: ruleId,
+        award: {
+          activityId
+        }
+      }
+    });
+
+    if (!existingRule) {
+      return res.status(404).json({ error: '发奖规则不存在' });
+    }
+
+    // 软删除规则（将isActive设为false）
+    await prisma.awardRule.update({
+      where: { id: ruleId },
+      data: { isActive: false }
+    });
+
+    res.json({ message: '发奖规则删除成功' });
+  } catch (error) {
+    console.error('删除发奖规则失败:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+});
+
+// 自动发奖
+router.post('/:id/auto-award', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMIN']), async (req, res) => {
+  try {
+    const activityId = parseInt(req.params.id);
+
+    // 检查活动是否存在
+    const activity = await prisma.activity.findUnique({
+      where: { id: activityId },
+      select: {
+        id: true,
+        name: true,
+        isActive: true,
+        _count: {
+          select: {
+            users: {
+              where: { status: 'APPROVED' }
+            }
+          }
+        }
+      }
+    });
+
+    if (!activity) {
+      return res.status(404).json({ error: '活动不存在' });
+    }
+
+    if (activity.isActive) {
+      return res.status(400).json({ error: '活动还未结束，不能发奖' });
+    }
+
+    const participantCount = activity._count.users;
+    if (participantCount === 0) {
+      return res.status(400).json({ error: '该活动没有参与者' });
+    }
+
+    // 获取所有已批准的参与者
+    const participants = await prisma.userActivity.findMany({
+      where: {
+        activityId,
+        status: 'APPROVED'
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true
+          }
+        },
+        userActivityScores: {
+          select: {
+            score: true,
+            rank: true,
+            isFinal: true
+          }
+        }
+      }
+    });
+
+    // 获取活动的所有发奖规则
+    const rules = await prisma.awardRule.findMany({
+      where: {
+        award: {
+          activityId,
+          isActive: true
+        },
+        isActive: true
+      },
+      include: {
+        award: {
+          select: {
+            id: true,
+            name: true,
+            priority: true
+          }
+        }
+      },
+      orderBy: [
+        { award: { priority: 'desc' } },
+        { createdAt: 'asc' }
+      ]
+    });
+
+    if (rules.length === 0) {
+      return res.status(400).json({ error: '该活动没有配置发奖规则' });
+    }
+
+    // 获取已存在的获奖记录，避免重复发奖
+    const existingAwardRecords = await prisma.awardRecord.findMany({
+      where: {
+        activityId,
+        awardType: 'AUTOMATIC'
+      },
+      select: {
+        userId: true,
+        awardId: true
+      }
+    });
+
+    const existingAwardsSet = new Set(
+      existingAwardRecords.map(record => `${record.userId}-${record.awardId}`)
+    );
+
+    let awardCount = 0;
+    const awardRecords = [];
+
+    // 为每个参与者匹配奖项
+    for (const participant of participants) {
+      const score = participant.userActivityScores[0]?.score || 0;
+      const rank = participant.userActivityScores[0]?.rank;
+
+      for (const rule of rules) {
+        let shouldAward = false;
+
+        if (rule.ruleType === 'SCORE_RANGE') {
+          shouldAward = score >= rule.minScore && score <= rule.maxScore;
+        } else if (rule.ruleType === 'RANK_RANGE' && rank) {
+          shouldAward = rank >= rule.minRank && rank <= rule.maxRank;
+        }
+
+        if (shouldAward) {
+          const awardKey = `${participant.userId}-${rule.awardId}`;
+
+          // 检查是否已经获得该奖项
+          if (!existingAwardsSet.has(awardKey)) {
+            awardRecords.push({
+              userId: participant.userId,
+              activityId,
+              awardId: rule.awardId,
+              awardType: 'AUTOMATIC',
+              issuedBy: req.user.id,
+              issuedAt: new Date()
+            });
+
+            existingAwardsSet.add(awardKey);
+            awardCount++;
+          }
+
+          // 由于奖项按优先级排序，只匹配最高优先级的奖项
+          break;
+        }
+      }
+    }
+
+    // 批量创建获奖记录
+    if (awardRecords.length > 0) {
+      await prisma.awardRecord.createMany({
+        data: awardRecords
+      });
+    }
+
+    res.json({
+      message: '自动发奖完成',
+      data: {
+        totalParticipants: participants.length,
+        awardedCount: awardCount,
+        rulesCount: rules.length
+      }
+    });
+  } catch (error) {
+    console.error('自动发奖失败:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+});
+
+// 管理员手动发奖
+router.post('/:id/manual-award', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMIN']), async (req, res) => {
+  try {
+    const activityId = parseInt(req.params.id);
+    const { userId, awardId, reason } = req.body;
+
+    // 验证输入
+    if (!userId || !awardId) {
+      return res.status(400).json({ error: '用户ID和奖项ID不能为空' });
+    }
+
+    // 检查用户是否参与了该活动且状态为已批准
+    const userActivity = await prisma.userActivity.findUnique({
+      where: {
+        userId_activityId: {
+          userId: parseInt(userId),
+          activityId
+        }
+      },
+      select: {
+        status: true,
+        user: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      }
+    });
+
+    if (!userActivity) {
+      return res.status(404).json({ error: '该用户未参与此活动' });
+    }
+
+    if (userActivity.status !== 'APPROVED') {
+      return res.status(400).json({ error: '该用户的活动报名未通过审核' });
+    }
+
+    // 检查奖项是否属于该活动且有效
+    const award = await prisma.activityAward.findFirst({
+      where: {
+        id: parseInt(awardId),
+        activityId,
+        isActive: true
+      }
+    });
+
+    if (!award) {
+      return res.status(404).json({ error: '奖项不存在或已禁用' });
+    }
+
+    // 检查是否已经获得过该奖项
+    const existingRecord = await prisma.awardRecord.findUnique({
+      where: {
+        userId_activityId_awardId: {
+          userId: parseInt(userId),
+          activityId,
+          awardId: parseInt(awardId)
+        }
+      }
+    });
+
+    if (existingRecord) {
+      return res.status(400).json({ error: '该用户已经获得过此奖项' });
+    }
+
+    // 创建手动获奖记录
+    const awardRecord = await prisma.awardRecord.create({
+      data: {
+        userId: parseInt(userId),
+        activityId,
+        awardId: parseInt(awardId),
+        awardType: 'MANUAL',
+        issuedBy: req.user.id,
+        issuedAt: new Date()
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            school: true
+          }
+        },
+        award: {
+          select: {
+            id: true,
+            name: true,
+            description: true
+          }
+        },
+        issuer: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      }
+    });
+
+    res.status(201).json({
+      message: '手动发奖成功',
+      data: awardRecord
+    });
+  } catch (error) {
+    console.error('手动发奖失败:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+});
+
+// 获取活动的获奖记录列表
+router.get('/:id/award-records', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMIN']), async (req, res) => {
+  try {
+    const activityId = parseInt(req.params.id);
+
+    // 检查活动是否存在
+    const activity = await prisma.activity.findUnique({
+      where: { id: activityId },
+      select: { id: true, name: true }
+    });
+
+    if (!activity) {
+      return res.status(404).json({ error: '活动不存在' });
+    }
+
+    const { page = 1, limit = 20, awardType } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const where = {
+      activityId
+    };
+
+    if (awardType) {
+      where.awardType = awardType;
+    }
+
+    const [records, total] = await Promise.all([
+      prisma.awardRecord.findMany({
+        where,
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              school: true,
+              phone: true
+            }
+          },
+          award: {
+            select: {
+              id: true,
+              name: true,
+              description: true
+            }
+          },
+          issuer: {
+            select: {
+              id: true,
+              name: true
+            }
+          }
+        },
+        orderBy: {
+          issuedAt: 'desc'
+        },
+        skip,
+        take: parseInt(limit)
+      }),
+      prisma.awardRecord.count({ where })
+    ]);
+
+    res.json({
+      data: records,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / parseInt(limit))
+      }
+    });
+  } catch (error) {
+    console.error('获取获奖记录失败:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+});
+
+// 删除获奖记录
+router.delete('/:id/award-records/:recordId', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMIN']), async (req, res) => {
+  try {
+    const activityId = parseInt(req.params.id);
+    const recordId = parseInt(req.params.recordId);
+
+    // 检查获奖记录是否存在且属于该活动
+    const existingRecord = await prisma.awardRecord.findFirst({
+      where: {
+        id: recordId,
+        activityId
+      },
+      include: {
+        award: true,
+        user: true
+      }
+    });
+
+    if (!existingRecord) {
+      return res.status(404).json({ error: '获奖记录不存在' });
+    }
+
+    // 只有手动颁发的奖项可以被删除
+    if (existingRecord.awardType !== 'MANUAL') {
+      return res.status(400).json({ error: '只能删除手动颁发的奖项' });
+    }
+
+    // 删除获奖记录
+    await prisma.awardRecord.delete({
+      where: { id: recordId }
+    });
+
+    res.json({
+      message: '获奖记录删除成功',
+      data: {
+        userName: existingRecord.user.name,
+        awardName: existingRecord.award.name
+      }
+    });
+  } catch (error) {
+    console.error('删除获奖记录失败:', error);
+    res.status(500).json({ error: '服务器错误' });
+  }
+});
+
+module.exports = router;

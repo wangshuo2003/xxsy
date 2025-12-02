@@ -3,6 +3,37 @@ const fs = require('fs')
 const path = require('path')
 const router = express.Router()
 
+// 内存缓存配置
+const memoryCache = new Map()
+const CACHE_DURATION = 30 * 60 * 1000 // 30分钟缓存
+const BING_CACHE_KEY = 'bing_wallpapers'
+
+// 简单的缓存函数
+const getCache = (key) => {
+  const cached = memoryCache.get(key)
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    return cached.data
+  }
+  return null
+}
+
+const setCache = (key, data) => {
+  memoryCache.set(key, {
+    data,
+    timestamp: Date.now()
+  })
+}
+
+// 定期清理过期缓存
+setInterval(() => {
+  const now = Date.now()
+  for (const [key, value] of memoryCache.entries()) {
+    if (now - value.timestamp > CACHE_DURATION) {
+      memoryCache.delete(key)
+    }
+  }
+}, 5 * 60 * 1000) // 每5分钟清理一次
+
 // 与 index.js 的静态资源目录保持一致：/app/uploads
 const bingDir = path.join(__dirname, '../../uploads/bing')
 const carouselDir = path.join(__dirname, '../../uploads/carousels')
@@ -66,10 +97,22 @@ const mergeUniqueById = (items) => {
 }
 
 const fetchBingMeta = async (idx = 0, n = 4) => {
+  // 检查内存缓存
+  const cacheKey = `bing_meta_${idx}_${n}`
+  const cached = getCache(cacheKey)
+  if (cached) {
+    console.log('使用Bing元数据缓存:', cacheKey)
+    return cached
+  }
+
   const response = await fetch(`https://www.bing.com/HPImageArchive.aspx?format=js&idx=${idx}&n=${n}&mkt=zh-CN`)
   if (!response.ok) throw new Error(`Bing status ${response.status}`)
   const data = await response.json()
-  return data?.images || []
+  const images = data?.images || []
+
+  // 缓存结果（15分钟）
+  setCache(cacheKey, images)
+  return images
 }
 
 const downloadImage = async (url, filepath) => {
@@ -142,15 +185,27 @@ router.get('/bing-wallpapers', async (req, res) => {
 router.get('/bing-cache', async (req, res) => {
   try {
     const fast = req.query.fast === '1' || req.query.fast === 'true'
+    const cacheKey = fast ? 'bing_cache_fast' : 'bing_cache_full'
+
+    // 检查内存缓存（快速模式缓存5分钟，完整模式缓存30分钟）
+    const cached = getCache(cacheKey)
+    if (cached) {
+      console.log(`使用Bing缓存: ${cacheKey}`)
+      return res.json(cached)
+    }
+
     await ensureDir(bingDir)
 
     // 优先使用后端静态目录下的本地轮播图（carousels）
     const localCarousel = await readLocalCarousel(4)
     if (localCarousel.length > 0) {
-      return res.json({
+      const result = {
         today: localCarousel[0]?.imageUrl || null,
         data: localCarousel
-      })
+      }
+      // 缓存结果
+      setCache(cacheKey, result)
+      return res.json(result)
     }
 
     // 先读取本地已有的最近 4 张

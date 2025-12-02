@@ -1,4 +1,4 @@
-import axios from 'axios'
+import request from './request'
 
 const STORAGE_KEY = 'bingWallpaperToday'
 const STORAGE_CAROUSEL_KEY = 'bingWallpaperCarousel'
@@ -76,7 +76,7 @@ export const prefetchBingToday = async (options = {}) => {
     if (fetchingFast) return fetchingFast
     fetchingFast = (async () => {
       try {
-        const res = await axios.get('/api/external/bing-cache', { params: { fast: 1 } })
+        const res = await request.get('/external/bing-cache', { params: { fast: 1 } })
         const todayUrl = res.data?.today || DEFAULT_FALLBACK || REMOTE_FALLBACK
         const images = res.data?.data || (todayUrl ? [{
           id: 'bing-today',
@@ -106,7 +106,7 @@ export const prefetchBingToday = async (options = {}) => {
   fetchingFull = (async () => {
     try {
       // 一次请求获取今日+前三天并缓存本地路径（后端已缓存文件）
-      const res = await axios.get('/api/external/bing-cache')
+      const res = await request.get('/external/bing-cache')
       const todayUrl = res.data?.today || DEFAULT_FALLBACK || REMOTE_FALLBACK
       let images = res.data?.data || []
       if ((!images || images.length === 0) && todayUrl) {

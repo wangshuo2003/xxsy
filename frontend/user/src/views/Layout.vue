@@ -46,7 +46,7 @@ const tabRoutes = ['/home', '/policies', '/activities', '/profile']
 const contentRef = ref(null)
 const currentRoute = computed(() => route)
 const isPoliciesPage = computed(() => route.path.startsWith('/policies'))
-const hideTabbarPages = ['/messages', '/chat', '/contacts/add']
+const hideTabbarPages = ['/messages', '/chat', '/contacts/add', '/activity']
 const showTabbar = computed(() => !hideTabbarPages.some(p => route.path.startsWith(p)))
 
 // 需要显示导航栏的页面列表

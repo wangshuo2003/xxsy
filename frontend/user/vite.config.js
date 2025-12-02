@@ -8,7 +8,7 @@ import { resolve } from 'path'
 const proxyTarget =
   process.env.VITE_PROXY_TARGET ||
   process.env.PROXY_TARGET ||
-  'http://localhost:28964'
+  'http://localhost:28965'
 
 export default defineConfig({
   plugins: [

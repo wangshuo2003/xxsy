@@ -53,8 +53,15 @@ setToastDefaultOptions('success', { className: 'global-toast global-toast-succes
 setToastDefaultOptions('fail', commonToastOptions)
 
 // 优先下载今日 Bing 壁纸，随后后台拉取前三天，减少首屏等待
-prefetchBingToday({ fast: true }).finally(() => {
-  prefetchBingToday({ forceFull: true }).catch(() => {})
-})
+// 添加节流机制，避免重复请求
+if (!window.bingMainPrefetchStarted) {
+  window.bingMainPrefetchStarted = true
+  prefetchBingToday({ fast: true }).finally(() => {
+    // 延迟执行完整请求，避免与首页请求冲突
+    setTimeout(() => {
+      prefetchBingToday({ forceFull: true }).catch(() => {})
+    }, 5000)
+  })
+}
 
 app.mount('#app')

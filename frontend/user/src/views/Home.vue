@@ -90,20 +90,25 @@
         <h3>成果展示</h3>
         <van-button plain type="primary" size="small" to="/achievements">查看更多</van-button>
       </div>
-      <div v-if="certificates.length > 0">
+      <div v-if="achievements.length > 0">
         <van-list>
-          <van-cell v-for="certificate in certificates" :key="certificate.id" @click="goToCertificate(certificate.id)" is-link>
+          <van-cell v-for="achievement in achievements" :key="achievement.activity.id" @click="goToAchievement(achievement.activity.id)" is-link>
             <template #title>
-              <div class="certificate-title">{{ certificate.title }}</div>
+              <div class="achievement-title">{{ achievement.activity.name }}</div>
             </template>
             <template #label>
-              <div class="certificate-issuer">{{ certificate.issuer || '暂无颁发机构' }} · {{ formatDate(certificate.issueDate || certificate.createdAt) }}</div>
+              <div class="achievement-stats">
+                <span v-if="achievement.score !== undefined" class="stat-item">得分: {{ achievement.score }}</span>
+                <span v-if="achievement.rank" class="stat-item">排名: 第{{ achievement.rank }}名</span>
+                <span v-if="achievement.awards.length > 0" class="stat-item">奖项: {{ achievement.awards.length }}个</span>
+              </div>
+              <div class="achievement-time">{{ formatDate(achievement.activity.time) }}</div>
             </template>
           </van-cell>
         </van-list>
       </div>
       <div v-else class="empty-state">
-        <van-empty description="暂无证书" />
+        <van-empty description="暂无活动成果" />
       </div>
     </div>
   </div>
@@ -120,7 +125,7 @@ const router = useRouter()
 const userStore = useUserStore()
 const carousels = ref([])
 const policies = ref([])
-const certificates = ref([])
+const achievements = ref([])
 const chatPreviews = ref([])
 const activities = ref([])
 const swipeRef = ref(null)
@@ -219,12 +224,18 @@ const fetchCarousels = async () => {
     const cached = getBingCarouselCache()
     if (cached.length > 0) {
       carousels.value = cached
-      // 后台刷新，若成功则更新
-      prefetchBingToday().then(({ images }) => {
-        if (images && images.length > 0) {
-          carousels.value = images
-        }
-      })
+      // 后台刷新，若成功则更新（添加节流，避免重复请求）
+      if (!window.bingRefreshTimer) {
+        window.bingRefreshTimer = setTimeout(() => {
+          prefetchBingToday().then(({ images }) => {
+            if (images && images.length > 0) {
+              carousels.value = images
+            }
+          }).finally(() => {
+            window.bingRefreshTimer = null
+          })
+        }, 2000) // 2秒延迟，避免重复请求
+      }
       return
     }
 
@@ -258,12 +269,18 @@ const fetchCarousels = async () => {
       carousels.value = withImages
     }
 
-    // 后台拉取完整 4 张，完成后替换
-    prefetchBingToday({ forceFull: true }).then(({ images }) => {
-      if (images && images.length > 0) {
-        carousels.value = images
-      }
-    })
+    // 后台拉取完整 4 张，完成后替换（避免重复请求）
+    if (!window.bingFullLoadTimer) {
+      window.bingFullLoadTimer = setTimeout(() => {
+        prefetchBingToday({ forceFull: true }).then(({ images }) => {
+          if (images && images.length > 0) {
+            carousels.value = images
+          }
+        }).finally(() => {
+          window.bingFullLoadTimer = null
+        })
+      }, 3000) // 3秒延迟，避免与快速请求冲突
+    }
 
     if (!carousels.value || carousels.value.length === 0) {
       carousels.value = defaultCarousels
@@ -296,23 +313,23 @@ const fetchPolicies = async () => {
   }
 }
 
-// 获取用户证书
-const fetchCertificates = async () => {
+// 获取用户活动成果
+const fetchAchievements = async () => {
   if (!userStore.isLoggedIn) {
-    certificates.value = []
+    achievements.value = []
     return
   }
 
   try {
-    const response = await axios.get('/api/certificates/my?limit=5', {
+    const response = await axios.get('/api/activities/my-achievements?limit=5', {
       headers: {
         'Authorization': `Bearer ${userStore.token}`
       }
     })
-    certificates.value = response.data.data || []
+    achievements.value = response.data.data || []
   } catch (error) {
-    console.error('获取证书失败:', error)
-    certificates.value = []
+    console.error('获取活动成果失败:', error)
+    achievements.value = []
   }
 }
 
@@ -405,9 +422,9 @@ const fetchActivities = async () => {
   }
 }
 
-// 跳转到证书详情
-const goToCertificate = (id) => {
-  router.push(`/achievements?id=${id}`)
+// 跳转到活动成果详情
+const goToAchievement = (id) => {
+  router.push(`/achievement/${id}`)
 }
 
 const goToMessages = () => {
@@ -424,7 +441,7 @@ onMounted(() => {
   fetchCarousels()
   fetchActivities()
   fetchPolicies()
-  fetchCertificates()
+  fetchAchievements()
   fetchRecentChats()
 })
 </script>
@@ -567,6 +584,35 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 活动成果样式 */
+.achievement-title {
+  font-size: 14px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.achievement-stats {
+  display: flex;
+  gap: 12px;
+  margin: 4px 0;
+}
+
+.stat-item {
+  font-size: 12px;
+  color: #666;
+  background: #f5f5f5;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.achievement-time {
+  font-size: 12px;
+  color: #999;
+  margin-top: 4px;
 }
 
 .empty-state {

@@ -110,9 +110,9 @@ const generateCaptcha = async () => {
   }
 }
 
-watch(showCaptcha, {
-  immediate: true,
-  handler: (val) => {
+watch(
+  showCaptcha,
+  (val) => {
     if (val) {
       generateCaptcha()
     } else {
@@ -120,8 +120,9 @@ watch(showCaptcha, {
       captchaText.value = ''
       captchaInput.value = ''
     }
-  }
-})
+  },
+  { immediate: true }
+)
 
 watch(failedCount, (val) => {
   localStorage.setItem('loginFailedCount', String(val))
@@ -136,7 +137,8 @@ onMounted(() => {
 const handleLogin = async () => {
   loading.value = true
   try {
-    if (!loginForm.username) {
+    const username = loginForm.username.trim()
+    if (!username) {
       showFailToast('请输入用户名')
       loading.value = false
       return
@@ -152,9 +154,12 @@ const handleLogin = async () => {
       return
     }
     const payload = {
-      ...loginForm,
-      captchaId: showCaptcha.value ? captchaId.value : undefined,
-      captchaCode: showCaptcha.value ? captchaInput.value : undefined
+      username,
+      password: loginForm.password
+    }
+    if (showCaptcha.value) {
+      payload.captchaId = captchaId.value
+      payload.captchaCode = captchaInput.value.trim()
     }
     await userStore.login(payload)
     showSuccessToast('登录成功')

@@ -41,6 +41,9 @@ model User {
   UserActivity        UserActivity[]
   UserHistory_User    UserHistory[]        @relation("UserHistory_userIdToUser")
   UserHistory_changed UserHistory[]        @relation("UserHistory_changedByToUser")
+  userActivityScores  UserActivityScore[]
+  awardRecords        AwardRecord[]        @relation("AwardRecordUser")
+  issuedAwards        AwardRecord[]        @relation("AwardRecordIssuer")
   adminOfBases        Base[]               @relation("BaseAdmins")
   contactsA           Contact[]            @relation("ContactUserA")
   contactsB           Contact[]            @relation("ContactUserB")
@@ -182,6 +185,9 @@ model Activity {
   users    UserActivity[]
   orders   Order[]
   creator  User?          @relation(fields: [createdBy], references: [id])
+  awards   ActivityAward[]
+  scores   UserActivityScore[]
+  awardRecords AwardRecord[]
 
   @@map("activities")
 }
@@ -414,6 +420,16 @@ enum BalanceTransactionType {
   GIFT_CARD
 }
 
+enum AwardRuleType {
+  SCORE_RANGE
+  RANK_RANGE
+}
+
+enum AwardType {
+  AUTOMATIC
+  MANUAL
+}
+
 model GiftCard {
   id          Int      @id @default(autoincrement())
   cardCode    String   @unique @db.VarChar(16)
@@ -452,4 +468,74 @@ model BaseCoupon {
 
   @@unique([baseId, couponCode])
   @@map("base_coupons")
+}
+
+model ActivityAward {
+  id          Int      @id @default(autoincrement())
+  activityId  Int
+  name        String
+  description String?
+  priority    Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  rules    AwardRule[]
+  records  AwardRecord[]
+
+  @@map("activity_awards")
+}
+
+model AwardRule {
+  id          Int          @id @default(autoincrement())
+  awardId     Int
+  ruleType    AwardRuleType
+  minScore    Int?
+  maxScore    Int?
+  minRank     Int?
+  maxRank     Int?
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  award ActivityAward @relation(fields: [awardId], references: [id], onDelete: Cascade)
+
+  @@map("award_rules")
+}
+
+model UserActivityScore {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  activityId  Int
+  score       Int      @default(0)
+  rank        Int?
+  isFinal     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, activityId])
+  @@map("user_activity_scores")
+}
+
+model AwardRecord {
+  id          Int          @id @default(autoincrement())
+  userId      Int
+  activityId  Int
+  awardId     Int
+  awardType   AwardType    @default(AUTOMATIC)
+  issuedBy    Int?
+  issuedAt    DateTime     @default(now())
+  createdAt   DateTime     @default(now())
+
+  user     User          @relation("AwardRecordUser", fields: [userId], references: [id], onDelete: Cascade)
+  activity Activity      @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  award    ActivityAward @relation(fields: [awardId], references: [id], onDelete: Cascade)
+  issuer   User?         @relation("AwardRecordIssuer", fields: [issuedBy], references: [id])
+
+  @@unique([userId, activityId, awardId])
+  @@map("award_records")
 }

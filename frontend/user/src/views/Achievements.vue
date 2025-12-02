@@ -1,103 +1,86 @@
 <template>
   <div class="achievements-page">
-    <!-- 证书列表 -->
+    <van-nav-bar title="活动成果" left-arrow @click-left="$router.back()" />
+
     <van-loading v-if="loading" class="loading" />
 
-    <div v-else-if="certificates.length === 0" class="empty-state">
-      <van-empty description="暂无证书">
+    <div v-else-if="achievements.length === 0" class="empty-state">
+      <van-empty description="暂无活动成果">
         <van-button type="primary" size="small" @click="$router.push('/activities')">
           去参加活动
         </van-button>
       </van-empty>
     </div>
 
-    <div
-      v-for="certificate in certificates"
-      :key="certificate.id"
-      class="certificate-card"
-      @click="handleViewDetail(certificate)"
-    >
-      <div class="certificate-header">
-        <div class="certificate-icon">
-          <van-icon name="award" size="32" />
+    <div v-else class="achievements-list">
+      <div
+        v-for="achievement in achievements"
+        :key="achievement.activity.id"
+        class="achievement-card"
+        @click="goToDetail(achievement.activity.id)"
+      >
+        <div class="achievement-header">
+          <div class="activity-info">
+            <h3 class="activity-name">{{ achievement.activity.name }}</h3>
+            <p class="activity-meta">
+              <van-icon name="clock" />
+              {{ formatDate(achievement.activity.time) }}
+            </p>
+            <p class="activity-meta">
+              <van-icon name="location" />
+              {{ achievement.activity.location }}
+            </p>
+          </div>
+          <div class="status-badge" :class="getStatusClass(achievement.awardStatus)">
+            {{ getStatusText(achievement.awardStatus) }}
+          </div>
         </div>
-        <div class="certificate-title">{{ certificate.title }}</div>
-      </div>
 
-      <div class="certificate-info">
-        <div class="certificate-issuer">
-          <van-icon name="medal" />
-          {{ certificate.issuer || '教育实践平台' }}
+        <div class="achievement-stats">
+          <div class="stat-item">
+            <div class="stat-label">得分</div>
+            <div class="stat-value">{{ achievement.score }}</div>
+          </div>
+          <div class="stat-item" v-if="achievement.rank">
+            <div class="stat-label">排名</div>
+            <div class="stat-value">第{{ achievement.rank }}名</div>
+          </div>
+          <div class="stat-item" v-if="achievement.awards.length > 0">
+            <div class="stat-label">奖项</div>
+            <div class="stat-value">{{ achievement.awards.length }}个</div>
+          </div>
         </div>
-        <div class="certificate-date">
-          <van-icon name="calendar" />
-          {{ formatDate(certificate.issueDate || certificate.createdAt) }}
-        </div>
-      </div>
 
-      <div class="certificate-description" v-if="certificate.description">
-        {{ certificate.description.slice(0, 100) }}{{ certificate.description.length > 100 ? '...' : '' }}
+        <div class="awards-list" v-if="achievement.awards.length > 0">
+          <div class="award-item" v-for="award in achievement.awards" :key="award.id">
+            <van-icon name="award" color="#ffd700" />
+            <span class="award-name">{{ award.name }}</span>
+            <span class="award-type" :class="award.type.toLowerCase()">
+              {{ award.type === 'AUTOMATIC' ? '自动' : '手动' }}
+            </span>
+          </div>
+        </div>
+
+        <div class="achievement-footer">
+          <span class="activity-type">{{ achievement.activity.type }}</span>
+          <van-icon name="arrow" />
+        </div>
       </div>
     </div>
-
-    <!-- 证书详情弹窗 -->
-    <van-popup
-      v-model:show="detailVisible"
-      position="bottom"
-      :style="{ height: '80%' }"
-      round
-    >
-      <div class="detail-popup" v-if="currentCertificate">
-        <div class="detail-header">
-          <h2>{{ currentCertificate.title }}</h2>
-          <van-button icon="cross" type="primary" plain @click="detailVisible = false" />
-        </div>
-
-        <div class="detail-content">
-          <div class="certificate-detail-card">
-            <div class="certificate-image">
-              <van-icon name="award" size="64" />
-            </div>
-
-            <div class="certificate-info-detail">
-              <h3>{{ currentCertificate.title }}</h3>
-              <p class="issuer">颁发机构：{{ currentCertificate.issuer || '教育实践平台' }}</p>
-              <p class="issue-date">颁发日期：{{ formatDate(currentCertificate.issueDate || currentCertificate.createdAt) }}</p>
-              <p class="certificate-id">证书编号：{{ currentCertificate.id.toString().padStart(8, '0') }}</p>
-            </div>
-          </div>
-
-          <div class="certificate-description-detail" v-if="currentCertificate.description">
-            <h4>证书描述</h4>
-            <p>{{ currentCertificate.description }}</p>
-          </div>
-
-          <div class="certificate-actions">
-            <van-button type="primary" block @click="handleDownload">
-              <van-icon name="down" />
-              下载证书
-            </van-button>
-          </div>
-        </div>
-      </div>
-    </van-popup>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
-import { showToast, showSuccessToast, showFailToast, showDialog } from 'vant'
+import { useRouter } from 'vue-router'
+import { showToast, showFailToast } from 'vant'
 import request from '@/api/request'
 
 const router = useRouter()
-const route = useRoute()
 
 // 响应式数据
 const loading = ref(false)
-const certificates = ref([])
-const detailVisible = ref(false)
-const currentCertificate = ref(null)
+const achievements = ref([])
 
 // 格式化日期
 const formatDate = (dateString) => {
@@ -106,48 +89,49 @@ const formatDate = (dateString) => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
+// 获取状态样式类
+const getStatusClass = (status) => {
+  const statusMap = {
+    'pending': 'status-pending',
+    'issued': 'status-issued',
+    'settled': 'status-settled',
+    'pending_settlement': 'status-pending-settlement'
+  }
+  return statusMap[status] || 'status-pending'
+}
+
+// 获取状态文本
+const getStatusText = (status) => {
+  const statusMap = {
+    'pending': '进行中',
+    'issued': '已发奖',
+    'settled': '已结算',
+    'pending_settlement': '待结算'
+  }
+  return statusMap[status] || '进行中'
+}
+
 // 加载数据
 const loadData = async () => {
   loading.value = true
   try {
-    const response = await request.get('/certificates/my')
-    certificates.value = response.data || []
+    const response = await request.get('/activities/my-achievements')
+    achievements.value = response.data || []
   } catch (error) {
-    console.error('获取证书失败:', error)
-    showFailToast('获取证书失败')
+    console.error('获取活动成果失败:', error)
+    showFailToast('获取活动成果失败')
   } finally {
     loading.value = false
   }
 }
 
-// 查看证书详情
-const handleViewDetail = (certificate) => {
-  currentCertificate.value = certificate
-  detailVisible.value = true
-}
-
-// 下载证书
-const handleDownload = () => {
-  showDialog({
-    message: '下载功能开发中',
-    confirmButtonText: '知道了'
-  })
+// 跳转到详情页
+const goToDetail = (activityId) => {
+  router.push(`/achievement/${activityId}`)
 }
 
 onMounted(() => {
   loadData()
-  
-  // 如果 URL中有 id 参数，自动打开对应证书的详情
-  if (route.query.id) {
-    const certificateId = parseInt(route.query.id)
-    // 等待数据加载完成后打开详情
-    setTimeout(() => {
-      const certificate = certificates.value.find(c => c.id === certificateId)
-      if (certificate) {
-        handleViewDetail(certificate)
-      }
-    }, 500)
-  }
 })
 </script>
 
@@ -155,13 +139,6 @@ onMounted(() => {
 .achievements-page {
   min-height: 100vh;
   background-color: #f7f8fa;
-  padding-top: 16px;
-  padding-bottom: 60px;
-}
-
-.loading,
-.empty-state {
-  padding: 16px;
 }
 
 .loading {
@@ -175,174 +152,154 @@ onMounted(() => {
   text-align: center;
 }
 
-.certificate-card {
+.achievements-list {
+  padding: 16px;
+}
+
+.achievement-card {
   background: white;
   border-radius: 12px;
-  margin: 0 16px 16px 16px;
-  padding: 20px;
+  margin-bottom: 16px;
+  padding: 16px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   cursor: pointer;
   transition: transform 0.2s;
 }
 
-.certificate-card:first-child {
-  margin-top: 16px;
-}
-
-.certificate-card:active {
+.achievement-card:active {
   transform: scale(0.98);
 }
 
-
-.certificate-header {
+.achievement-header {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  justify-content: space-between;
+  align-items: flex-start;
   margin-bottom: 16px;
 }
 
-.certificate-icon {
-  background: #e1f3d8;
-  color: #67c23a;
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.activity-info {
+  flex: 1;
 }
 
-.certificate-title {
+.activity-name {
   font-size: 18px;
   font-weight: 600;
   color: #323233;
+  margin: 0 0 8px 0;
   line-height: 1.4;
 }
 
-.certificate-info {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.certificate-issuer,
-.certificate-date {
+.activity-meta {
+  font-size: 14px;
+  color: #646566;
+  margin: 4px 0;
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 14px;
-  color: #646566;
 }
 
-.certificate-description {
-  font-size: 14px;
-  color: #969799;
-  line-height: 1.5;
-}
-
-.detail-popup {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.detail-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid #ebedf0;
-}
-
-.detail-header h2 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.detail-content {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0 20px 20px;
-}
-
-.certificate-detail-card {
-  background: linear-gradient(135deg, #e1f3d8 0%, #d4e8d4 100%);
+.status-badge {
+  padding: 4px 8px;
   border-radius: 12px;
-  padding: 24px;
-  margin: 16px 0;
-  text-align: center;
-  position: relative;
-  overflow: hidden;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
-.certificate-detail-card::before {
-  content: '';
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  right: 10px;
-  bottom: 10px;
-  border: 2px solid #67c23a;
-  border-radius: 8px;
-  opacity: 0.3;
+.status-pending {
+  background-color: #e6f7ff;
+  color: #1890ff;
 }
 
-.certificate-image {
+.status-issued {
+  background-color: #f6ffed;
+  color: #52c41a;
+}
+
+.status-settled {
+  background-color: #fff7e6;
+  color: #fa8c16;
+}
+
+.status-pending-settlement {
+  background-color: #fff1f0;
+  color: #ff4d4f;
+}
+
+.achievement-stats {
+  display: flex;
+  justify-content: space-around;
   margin-bottom: 16px;
-  color: #67c23a;
+  padding: 12px;
+  background-color: #f7f8fa;
+  border-radius: 8px;
 }
 
-.certificate-info-detail h3 {
-  margin: 0 0 12px 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: #2c3e50;
+.stat-item {
+  text-align: center;
 }
 
-.certificate-info-detail p {
-  margin: 8px 0;
-  font-size: 14px;
-  color: #5a6c7d;
+.stat-label {
+  font-size: 12px;
+  color: #969799;
+  margin-bottom: 4px;
 }
 
-.certificate-description-detail {
-  margin: 20px 0;
-}
-
-.certificate-description-detail h4 {
-  margin: 0 0 12px 0;
-  font-size: 16px;
+.stat-value {
+  font-size: 18px;
   font-weight: 600;
   color: #323233;
 }
 
-.certificate-description-detail p {
-  margin: 0;
+.awards-list {
+  margin-bottom: 12px;
+}
+
+.award-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
   font-size: 14px;
-  color: #646566;
-  line-height: 1.6;
+  color: #323233;
 }
 
-.certificate-actions {
-  margin-top: 24px;
+.award-name {
+  flex: 1;
+  font-weight: 500;
 }
 
-/* 确保 Toast文字可见 */
-:deep(.custom-toast) {
-  min-width: 200px !important;
-  padding: 16px !important;
-  background-color: #fff !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+.award-type {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
 }
 
-:deep(.custom-toast .van-toast__text) {
-  font-size: 16px !important;
-  color: #000 !important;
-  line-height: 1.5 !important;
-  display: block !important;
-  visibility: visible !important;
-  opacity: 1 !important;
+.award-type.automatic {
+  background-color: #e6f7ff;
+  color: #1890ff;
+}
+
+.award-type.manual {
+  background-color: #fff7e6;
+  color: #fa8c16;
+}
+
+.achievement-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 12px;
+  border-top: 1px solid #ebedf0;
+  font-size: 14px;
+  color: #969799;
+}
+
+.activity-type {
+  background-color: #f0f2f5;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
 }
 </style>

@@ -103,6 +103,7 @@ import axios from 'axios'
 import { useUserStore } from '@/stores/user'
 import ActivityList from '../components/ActivityList.vue'
 import { showToast } from 'vant'
+import { optimizedRequest } from '@/utils/apiOptimizer'
 
 const userStore = useUserStore()
 const route = useRoute()
@@ -140,10 +141,9 @@ const showLoadMore = computed(() => filteredActivities.value.length > 0)
 const filteredActivities = computed(() => {
   return activities.value.map(activity => {
     const userRegistration = userRegistrations.value.find(reg => reg.id === activity.id)
-    // 如果订单已退款，视为未报名，允许重新报名
-    const isRefundedOrder = userRegistration?.order?.status === 'REFUNDED'
-    // 若没有订单但 registrationStatus 存在，也视作已报名（除非手动退款被删除订单的情况）
-    const hasRegistration = userRegistration && !isRefundedOrder
+    // 如果订单已退款，仍然保留订单信息，让ActivityList组件处理显示逻辑
+    // 这样可以确保ActivityList能正确显示"已退款"状态
+    const hasRegistration = !!userRegistration
     const registrationStatus = hasRegistration ? userRegistration?.registrationStatus : undefined
     const registrationId = hasRegistration ? userRegistration?.registrationId : undefined
     const registeredAt = hasRegistration ? userRegistration?.registeredAt : undefined
@@ -166,14 +166,19 @@ const fetchUserRegistrations = async () => {
   }
 
   try {
-    const response = await axios.get('/api/activities/my-registrations', {
+    const response = await optimizedRequest('/activities/my-registrations', {
+      method: 'GET',
       params: {
         page: 1,
-        limit: 1000  // 获取所有报名记录
+        limit: 100  // 减少获取数量，避免大数据量请求
       },
       headers: {
         'Authorization': `Bearer ${userStore.token}`
       }
+    }, {
+      cache: true,
+      cacheKey: `user-registrations-${userStore.user?.id}`,
+      cacheDuration: 5 * 60 * 1000 // 5分钟缓存
     })
 
     userRegistrations.value = response.data.data || []
@@ -306,7 +311,14 @@ const fetchActivities = async () => {
       params.type = activeTab.value
     }
 
-    const response = await axios.get('/api/activities', { params })
+    const response = await optimizedRequest('/activities', {
+      method: 'GET',
+      params
+    }, {
+      cache: true,
+      cacheKey: `activities-${JSON.stringify(params)}`,
+      cacheDuration: 3 * 60 * 1000 // 3分钟缓存
+    })
 
     const newActivities = response.data.data || []
     const pagination = response.data.pagination || {}
