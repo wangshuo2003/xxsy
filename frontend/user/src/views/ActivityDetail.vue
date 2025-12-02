@@ -574,7 +574,8 @@ watch(() => route.params.orderId, (newOrderId, oldOrderId) => {
 
 <style scoped>
 .activity-detail {
-  height: 100vh;
+  position: fixed;
+  inset: 0;
   overflow: hidden;
   background-color: #f7f8fa;
   display: flex;
@@ -587,6 +588,7 @@ watch(() => route.params.orderId, (newOrderId, oldOrderId) => {
   flex-direction: column;
   min-height: 0;
   position: relative;
+  overflow: hidden;
 }
 
 .loading {
@@ -598,10 +600,11 @@ watch(() => route.params.orderId, (newOrderId, oldOrderId) => {
 
 .scrollable-content {
   flex: 1;
+  height: 100%;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   background-color: white;
-  padding-bottom: 120px;
+  padding-bottom: calc(140px + env(safe-area-inset-bottom));
 }
 
 .activity-image {
