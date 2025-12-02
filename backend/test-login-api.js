@@ -1,1 +1,62 @@
-const http = require("http")\n\nconst testLogin = async () => {\n  try {\n    const loginData = JSON.stringify({\n      username: "1",\n      password: "1"\n    })\n\n    console.log("测试登录API...")\n    const response = await makeRequest("POST", "/api/auth/login", loginData)\n    console.log("✅ 登录成功\!")\n    console.log("返回的用户信息:", response.user)\n  } catch (error) {\n    console.error("❌ 登录失败:", error.message)\n  }\n}\n\nfunction makeRequest(method, path, data) {\n  return new Promise((resolve, reject) => {\n    const options = {\n      hostname: "localhost",\n      port: 38964,\n      path: path,\n      method: method,\n      headers: {\n        "Content-Type": "application/json",\n        "Content-Length": Buffer.byteLength(data)\n      }\n    }\n\n    const req = http.request(options, (res) => {\n      let responseData = ""\n\n      res.on("data", (chunk) => {\n        responseData += chunk\n      })\n\n      res.on("end", () => {\n        try {\n          const parsedData = JSON.parse(responseData)\n          if (res.statusCode >= 200 && res.statusCode < 300) {\n            resolve(parsedData)\n          } else {\n            reject(new Error(`HTTP ${res.statusCode}: ${parsedData.error || "Request failed"}`))\n          }\n        } catch (error) {\n          reject(new Error(`Response parse error: ${error.message}`))\n        }\n      })\n    })\n\n    req.on("error", (error) => {\n      reject(error)\n    })\n\n    req.write(data)\n    req.end()\n  })\n}\n\ntestLogin()
+const http = require("http");
+
+const testLogin = async () => {
+  try {
+    const loginData = JSON.stringify({
+      username: "1",
+      password: "1"
+    });
+
+    console.log("测试登录API...");
+    const response = await makeRequest("POST", "/api/auth/login", loginData);
+    console.log("✅ 登录成功!");
+    console.log("返回的用户信息:", response.user);
+  } catch (error) {
+    console.error("❌ 登录失败:", error.message);
+  }
+};
+
+function makeRequest(method, path, data) {
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: "localhost",
+      port: 28964,
+      path: path,
+      method: method,
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(data)
+      }
+    };
+
+    const req = http.request(options, (res) => {
+      let responseData = "";
+
+      res.on("data", (chunk) => {
+        responseData += chunk;
+      });
+
+      res.on("end", () => {
+        try {
+          const parsedData = JSON.parse(responseData);
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve(parsedData);
+          } else {
+            reject(new Error(`HTTP ${res.statusCode}: ${parsedData.error || "Request failed"}`));
+          }
+        } catch (error) {
+          reject(new Error(`Response parse error: ${error.message}`));
+        }
+      });
+    });
+
+    req.on("error", (error) => {
+      reject(error);
+    });
+
+    req.write(data);
+    req.end();
+  });
+}
+
+testLogin();

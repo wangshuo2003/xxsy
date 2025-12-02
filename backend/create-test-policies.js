@@ -11,7 +11,7 @@ const createTestPolicies = async () => {
       password: 'admin'
     })
 
-    const loginResponse = await makeRequest('POST', '/api/auth/login', loginData, null, 38964)
+    const loginResponse = await makeRequest('POST', '/api/auth/login', loginData, null, 28964)
     const token = loginResponse.token
     console.log('登录成功，获得token')
 
@@ -98,7 +98,56 @@ const createTestPolicies = async () => {
         tags: '美育工作,艺术教育',
         isDraft: false,
         sortOrder: 5
-      }
+      },
+      {
+        title: '如何用一颗土豆拯救世界？',
+        content: `<h2>土豆的奇妙用途</h2>
+<p>你知道吗？一颗土豆不仅能填饱肚子，还能发电、净化水，甚至用作生物燃料！</p>
+<h3>行动指南</h3>
+<ul>
+<li>种植土豆，减少碳足迹</li>
+<li>用土豆电池点亮小灯泡</li>
+<li>探索土豆在未来能源中的潜力</li>
+</ul>`,
+        tags: '趣味,环保,教育',
+        isDraft: false,
+        sortOrder: 6
+      },
+      {
+        title: '猫咪与编程：如何让你的宠物参与代码审查？',
+        content: `<h2>猫咪的编程天赋</h2>
+<p>研究表明，猫咪对键盘的热爱可能隐藏着它们对代码的独特见解。</p>
+<h3>实践步骤</h3>
+<ul>
+<li>在键盘旁放置猫薄荷，吸引猫咪参与</li>
+<li>观察猫咪按下的键，寻找灵感</li>
+<li>将猫咪的行为转化为代码优化的创意</li>
+</ul>`,
+        tags: '趣味,编程,宠物',
+        isDraft: false,
+        sortOrder: 7
+      },
+      {
+        title: '用纸飞机传递爱：校园创意活动指南',
+        content: `<h2>纸飞机的艺术</h2>
+<p>纸飞机不仅是童年的回忆，更是一种传递情感的方式。</p>
+<h3>活动亮点</h3>
+<ul>
+<li>设计独特的纸飞机，写上祝福语</li>
+<li>举办纸飞机比赛，评选最远飞行奖</li>
+<li>通过纸飞机传递友谊和爱</li>
+</ul>`,
+        tags: '创意,校园活动,趣味',
+        isDraft: false,
+        sortOrder: 8
+      },
+      ...Array.from({ length: 27 }, (_, i) => ({
+        title: `趣味通知 ${i + 9}`,
+        content: `<h2>这是第 ${i + 9} 条有趣的通知</h2><p>内容丰富多彩，充满创意！</p>`,
+        tags: '趣味,通知',
+        isDraft: false,
+        sortOrder: i + 9
+      }))
     ]
 
     // 逐个创建政策
@@ -112,7 +161,7 @@ const createTestPolicies = async () => {
           '/api/policies',
           JSON.stringify(policyData),
           token,
-          38964
+          28964
         )
         console.log(`✅ 政策创建成功: ${response.data.title}`)
       } catch (error) {
@@ -129,7 +178,7 @@ const createTestPolicies = async () => {
 }
 
 // HTTP请求函数
-function makeRequest(method, path, data, token = null, port = 38964) {
+function makeRequest(method, path, data, token = null, port = 28964) {
   return new Promise((resolve, reject) => {
     const options = {
       hostname: 'localhost',

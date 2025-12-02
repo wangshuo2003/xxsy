@@ -12,7 +12,7 @@ const createTestEvents = async () => {
       password: 'admin'
     })
 
-    const loginResponse = await makeRequest('POST', '/api/auth/login', loginData, null, 38964)
+    const loginResponse = await makeRequest('POST', '/api/auth/login', loginData, null, 28964)
     const token = loginResponse.token
     console.log('登录成功，获得token')
 
@@ -89,7 +89,7 @@ const createTestEvents = async () => {
 }
 
 // HTTP请求函数
-function makeRequest(method, path, data, token = null, port = 38964) {
+function makeRequest(method, path, data, token = null, port = 28964) {
   return new Promise((resolve, reject) => {
     const options = {
       hostname: 'localhost',

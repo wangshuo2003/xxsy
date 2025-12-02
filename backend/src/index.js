@@ -11,7 +11,7 @@ const { authMiddleware } = require('./middleware/auth')
 dotenv.config()
 
 const app = express()
-const PORT = parseInt(process.env.PORT) || 38964
+const PORT = parseInt(process.env.PORT) || 28964
 
 const parseOrigins = (value) => {
   return (value || '')
@@ -31,7 +31,7 @@ const defaultOrigins = [
   'http://localhost:5176',
   'http://localhost:5177',
   'http://localhost:5178',
-  'http://localhost:38964',
+  'http://localhost:28964',
   'http://localhost:48965'
 ]
 
@@ -78,6 +78,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 
 // 静态文件服务（同时暴露 /uploads 与 /api/uploads，便于前端同域访问）
 const uploadsPath = path.join(__dirname, '../uploads')
+console.log('静态文件路径:', uploadsPath, '存在:', require('fs').existsSync(uploadsPath))
 app.use('/uploads', express.static(uploadsPath))
 app.use('/api/uploads', express.static(uploadsPath))
 

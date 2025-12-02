@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>轮播图诊断页面</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; }
+        .success { color: green; }
+        .error { color: red; }
+        img { max-width: 300px; margin: 10px; border: 1px solid #ccc; }
+    </style>
+</head>
+<body>
+    <h1>轮播图诊断页面</h1>
+
+    <div class="test-section">
+        <h2>1. 测试 Bing 缓存 API</h2>
+        <button onclick="testBingCache()">测试 Bing 缓存 API</button>
+        <div id="bing-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>2. 测试图片访问</h2>
+        <button onclick="testImages()">测试图片访问</button>
+        <div id="image-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>3. 清除缓存</h2>
+        <button onclick="clearCache()">清除本地缓存</button>
+        <div id="cache-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>4. 登录测试</h2>
+        <p>测试账号：</p>
+        <ul>
+            <li>用户名: admin, 密码: 123456 (超级管理员)</li>
+            <li>用户名: baseadmin, 密码: 123456 (活动管理员)</li>
+        </ul>
+        <a href="http://localhost:8964/login" target="_blank">前往登录页面</a>
+    </div>
+
+    <script>
+        async function testBingCache() {
+            const result = document.getElementById('bing-result');
+            try {
+                const response = await fetch('/api/external/bing-cache?fast=1');
+                const data = await response.json();
+                if (response.ok) {
+                    result.innerHTML = '<span class="success">✅ API 正常</span><br>' +
+                        '返回 ' + data.data.length + ' 张图片<br>' +
+                        '第一张: ' + data.data[0].imageUrl;
+                } else {
+                    result.innerHTML = '<span class="error">❌ API 错误: ' + data.error + '</span>';
+                }
+            } catch (error) {
+                result.innerHTML = '<span class="error">❌ 网络错误: ' + error.message + '</span>';
+            }
+        }
+
+        async function testImages() {
+            const result = document.getElementById('image-result');
+            const testUrls = [
+                '/api/uploads/bing/20251201.jpg',
+                '/api/uploads/bing/20251130.jpg',
+                '/api/uploads/bing/20251129.jpg',
+                '/api/uploads/bing/20251128.jpg'
+            ];
+
+            result.innerHTML = '测试中...';
+
+            for (const url of testUrls) {
+                try {
+                    const response = await fetch(url);
+                    if (response.ok) {
+                        result.innerHTML += '<br><span class="success">✅ ' + url + ' - OK</span>';
+                        // 显示图片
+                        const img = document.createElement('img');
+                        img.src = url;
+                        img.onload = () => img.style.border = '2px solid green';
+                        img.onerror = () => img.style.border = '2px solid red';
+                        result.appendChild(img);
+                    } else {
+                        result.innerHTML += '<br><span class="error">❌ ' + url + ' - ' + response.status + '</span>';
+                    }
+                } catch (error) {
+                    result.innerHTML += '<br><span class="error">❌ ' + url + ' - 错误: ' + error.message + '</span>';
+                }
+            }
+        }
+
+        function clearCache() {
+            const result = document.getElementById('cache-result');
+            try {
+                localStorage.removeItem('bingWallpaperToday');
+                localStorage.removeItem('bingWallpaperCarousel');
+                result.innerHTML = '<span class="success">✅ 本地缓存已清除</span>';
+            } catch (error) {
+                result.innerHTML = '<span class="error">❌ 清除缓存失败: ' + error.message + '</span>';
+            }
+        }
+
+        // 页面加载时自动测试
+        window.onload = function() {
+            testBingCache();
+        };
+    </script>
+</body>
+</html>

@@ -146,13 +146,7 @@ const cacheBingImage = async (imgMeta) => {
     await downloadImage(fullUrl, localPath)
   }
 
-  // 同步更新最新壁纸副本，便于全站兜底使用
-  const latestPath = path.join(bingDir, 'bing-latest.jpg')
-  try {
-    await fs.promises.copyFile(localPath, latestPath)
-  } catch (e) {
-    console.error('更新最新 Bing 壁纸失败:', e)
-  }
+  // 不再强制复制 bing-latest.jpg，避免部分宿主文件系统报错；兜底直接用 today 图
 
   return {
     id: filename,

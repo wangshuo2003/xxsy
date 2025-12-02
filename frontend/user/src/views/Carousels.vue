@@ -24,10 +24,12 @@ const carousels = ref([])
 
 const loadCarousels = async () => {
   try {
-    const response = await request.get('/carousels')
-    carousels.value = response.data.filter(item => item.isActive)
+    const response = await request.get('/external/bing-cache')
+    const { today, data } = response.data
+    // 确保数据按日期排序，并限制为最多 4 张
+    carousels.value = data.slice(0, 4)
   } catch (error) {
-    console.error('加载轮播图失败:', error)
+    console.error('加载 Bing 壁纸失败:', error)
   }
 }
 
