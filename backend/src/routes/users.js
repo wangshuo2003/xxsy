@@ -276,7 +276,7 @@ router.post('/', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMIN'
   body('username').notEmpty().withMessage('用户名不能为空'),
   body('password').notEmpty().withMessage('密码不能为空'),
   body('name').notEmpty().withMessage('姓名不能为空'),
-  body('phone').notEmpty().withMessage('手机号不能为空').isLength({ min: 1, max: 20 }).withMessage('手机号长度应在1-20个字符之间'),
+  body('phone').optional({ nullable: true }),
   body('role').isIn(['SUPER_ADMIN', 'ACTIVITY_ADMIN', 'STUDENT']).withMessage('角色不正确')
 ], async (req, res) => {
   try {
@@ -347,8 +347,8 @@ router.post('/', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMIN'
 })
 
 router.put('/:id', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMIN']), [
-  body('name').optional().notEmpty().withMessage('姓名不能为空'),
-  body('phone').optional().isLength({ min: 3, max: 20 }).withMessage('手机号长度应在3-20个字符之间')
+  body('name').optional(),
+  body('phone').optional()
 ], async (req, res) => {
   try {
     const errors = validationResult(req)

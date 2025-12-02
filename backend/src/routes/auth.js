@@ -64,7 +64,6 @@ router.post('/register', [
   body('password').notEmpty().withMessage('密码不能为空'),
   body('name').notEmpty().withMessage('姓名不能为空'),
   body('phone').notEmpty().withMessage('手机号不能为空')
-    .isLength({ min: 3, max: 20 }).withMessage('手机号长度应在3-20个字符之间')
 ], async (req, res) => {
   try {
     const errors = validationResult(req)
@@ -277,9 +276,8 @@ router.put('/password', authMiddleware, [
 
 // 编辑用户资料
 router.put('/profile', authMiddleware, [
-  body('name').optional({ nullable: true }).notEmpty().withMessage('姓名不能为空'),
-  body('phone').optional({ nullable: true }).notEmpty().withMessage('手机号不能为空')
-    .isLength({ min: 3, max: 20 }).withMessage('手机号长度应在3-20个字符之间'),
+  body('name').optional({ nullable: true }),
+  body('phone').optional({ nullable: true }),
   // 年龄取消上限限制，仅要求整数
   body('age').optional().isInt().withMessage('年龄需为整数'),
   body('signature').optional().isLength({ max: 255 }).withMessage('个性签名不能超过255个字符'),

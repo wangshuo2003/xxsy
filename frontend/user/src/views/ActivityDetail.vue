@@ -574,7 +574,8 @@ watch(() => route.params.orderId, (newOrderId, oldOrderId) => {
 
 <style scoped>
 .activity-detail {
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   background-color: #f7f8fa;
   display: flex;
   flex-direction: column;
@@ -585,6 +586,7 @@ watch(() => route.params.orderId, (newOrderId, oldOrderId) => {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  position: relative;
 }
 
 .loading {
@@ -599,6 +601,7 @@ watch(() => route.params.orderId, (newOrderId, oldOrderId) => {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   background-color: white;
+  padding-bottom: 120px;
 }
 
 .activity-image {
@@ -684,7 +687,10 @@ watch(() => route.params.orderId, (newOrderId, oldOrderId) => {
 }
 
 .bottom-bar {
-  position: relative;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
   background-color: white;
   padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
   box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
