@@ -165,17 +165,28 @@ router.get('/:id', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMI
         grade: true,
         role: true,
         createdAt: true,
-        certificates: true,
-        activities: {
+        Certificate: true,
+        UserActivity: {
           include: { activity: { select: { name: true } } }
         },
-        orders: {
+        Order: {
           include: { service: { select: { title: true } } }
         }
       }
     })
 
     if (!targetUser) return res.status(404).json({ error: '用户不存在' })
+    
+    // Map field names for backward compatibility
+    const responseUser = {
+      ...targetUser,
+      certificates: targetUser.Certificate,
+      activities: targetUser.UserActivity,
+      orders: targetUser.Order
+    }
+    delete responseUser.Certificate
+    delete responseUser.UserActivity
+    delete responseUser.Order
 
     // 权限控制：活动管理员只能查看学生用户或与自己管理基地相关的活动管理员
     if (user.role === 'ACTIVITY_ADMIN') {
@@ -218,7 +229,7 @@ router.get('/:id', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMI
       }
     }
 
-    res.json({ data: targetUser })
+    res.json({ data: responseUser })
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: '服务器错误' })
