@@ -360,8 +360,6 @@ router.put('/profile', authMiddleware, [
           school: updatedUser.school,
           grade: updatedUser.grade,
           className: updatedUser.className,
-          age: updatedUser.age,
-          signature: updatedUser.signature,
           role: updatedUser.role,
           isDisabled: false
         }

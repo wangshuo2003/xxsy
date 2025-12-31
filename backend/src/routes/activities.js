@@ -727,22 +727,20 @@ router.get('/:id/registrations', authMiddleware, async (req, res) => {
     const activity = await prisma.activity.findUnique({
       where: { id: activityId },
       include: {
-        base: { select: { managerId: true } }
+        base: { 
+          select: { 
+            createdBy: true,
+            admins: { select: { id: true } }
+          } 
+        }
       }
     })
 
     if (!activity) return res.status(404).json({ error: '活动不存在' })
 
-    const allowedRoles = ['SUPER_ADMIN', 'ADMIN', 'BASE_ADMIN']
+    const allowedRoles = ['SUPER_ADMIN', 'ACTIVITY_ADMIN']
     if (!allowedRoles.includes(req.user.role)) {
       return res.status(403).json({ error: '权限不足' })
-    }
-
-    if (req.user.role === 'BASE_ADMIN') {
-      const managerId = activity.base?.managerId
-      if (managerId && managerId !== req.user.id) {
-        return res.status(403).json({ error: '您无权查看该活动报名信息' })
-      }
     }
 
     const registrations = await prisma.userActivity.findMany({
@@ -882,27 +880,6 @@ router.put('/activity-registrations/:id/note', authMiddleware, roleMiddleware(['
     })
 
     res.json({ message: '备注添加成功', registration })
-  } catch (error) {
-    console.error(error)
-    res.status(500).json({ error: '服务器错误' })
-  }
-})
-
-// 删除活动
-router.delete('/:id', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMIN']), async (req, res) => {
-  try {
-    const activity = await prisma.activity.findUnique({
-      where: { id: parseInt(req.params.id) },
-      include: { base: true }
-    })
-
-    if (!activity) return res.status(404).json({ error: '活动不存在' })
-
-    // 任何管理员都可以删除任何活动
-    // 不再限制已通过审核的活动不能删除
-
-    await prisma.activity.delete({ where: { id: parseInt(req.params.id) } })
-    res.json({ message: '活动删除成功' })
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: '服务器错误' })
@@ -1501,16 +1478,30 @@ router.post('/:id/auto-award', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'A
             id: true,
             name: true
           }
-        },
-        userActivityScores: {
-          select: {
-            score: true,
-            rank: true,
-            isFinal: true
-          }
         }
       }
     });
+
+    // 获取所有参与者的成绩
+    const participantUserIds = participants.map(p => p.userId);
+    const userScores = await prisma.userActivityScore.findMany({
+      where: {
+        activityId,
+        userId: { in: participantUserIds }
+      },
+      select: {
+        userId: true,
+        score: true,
+        rank: true,
+        isFinal: true
+      }
+    });
+    
+    // 创建成绩映射
+    const scoreMap = new Map();
+    for (const score of userScores) {
+      scoreMap.set(score.userId, score);
+    }
 
     // 获取活动的所有发奖规则
     const rules = await prisma.awardRule.findMany({
@@ -1561,8 +1552,9 @@ router.post('/:id/auto-award', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'A
 
     // 为每个参与者匹配奖项
     for (const participant of participants) {
-      const score = participant.userActivityScores[0]?.score || 0;
-      const rank = participant.userActivityScores[0]?.rank;
+      const userScore = scoreMap.get(participant.userId);
+      const score = userScore?.score || 0;
+      const rank = userScore?.rank;
 
       for (const rule of rules) {
         let shouldAward = false;

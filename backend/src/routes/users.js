@@ -111,14 +111,11 @@ router.get('/', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMIN']
           }
         }
       })
-      // Merge Base_managerId and adminOfBases
+      // Note: adminOfBases already contains the admin relationships
       users = users.map(user => {
-        const allBases = [...(user.Base_managerId || []), ...(user.adminOfBases || [])]
-        // Deduplicate by ID
-        const uniqueBases = Array.from(new Map(allBases.map(item => [item.id, item])).values())
         return {
           ...user,
-          adminOfBases: uniqueBases
+          adminOfBases: user.adminOfBases || []
         }
       })
     } else {
