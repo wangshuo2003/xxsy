@@ -85,8 +85,8 @@ router.get('/', authMiddleware, async (req, res) => {
 
     if (search) {
       where.OR = [
-        { orderNo: { contains: search, mode: 'insensitive' } },
-        { activity: { name: { contains: search, mode: 'insensitive' } } },
+        { orderNo: { contains: search } },
+        { activity: { name: { contains: search } } },
       ];
     }
 
@@ -562,31 +562,16 @@ router.put('/:id/cancel', authMiddleware, async (req, res) => {
   }
 })
 
-router.put('/:id/admin-note', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMIN', 'BASE_ADMIN']), async (req, res) => {
+router.put('/:id/admin-note', authMiddleware, roleMiddleware(['SUPER_ADMIN', 'ACTIVITY_ADMIN']), async (req, res) => {
   try {
     const { adminNote } = req.body
     const trimmedNote = adminNote && adminNote.trim ? adminNote.trim() : ''
 
     const order = await prisma.order.findUnique({
-      where: { id: parseInt(req.params.id) },
-      include: {
-        activity: {
-          select: {
-            id: true,
-            base: { select: { managerId: true } }
-          }
-        }
-      }
+      where: { id: parseInt(req.params.id) }
     })
 
     if (!order) return res.status(404).json({ error: '订单不存在' })
-
-    if (req.user.role === 'BASE_ADMIN') {
-      const managerId = order.activity?.base?.managerId
-      if (managerId && managerId !== req.user.id) {
-        return res.status(403).json({ error: '您无权操作该订单' })
-      }
-    }
 
     const updatedOrder = await prisma.order.update({
       where: { id: order.id },

@@ -1,12 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
-const { authMiddleware } = require('../middleware/auth');
+const { authMiddleware, roleMiddleware } = require('../middleware/auth');
 
 const prisma = new PrismaClient();
+const ADMIN_ROLES = ['SUPER_ADMIN', 'ACTIVITY_ADMIN'];
 
 // 获取通知列表（管理员）
-router.get('/', authMiddleware, async (req, res) => {
+router.get('/', authMiddleware, roleMiddleware(ADMIN_ROLES), async (req, res) => {
   try {
     const { page = 1, limit = 20, type, targetRole, isActive } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -63,7 +64,7 @@ router.get('/', authMiddleware, async (req, res) => {
 });
 
 // 创建通知（管理员）
-router.post('/', authMiddleware, async (req, res) => {
+router.post('/', authMiddleware, roleMiddleware(ADMIN_ROLES), async (req, res) => {
   try {
     const { title, content, type, targetRole, isActive = true } = req.body;
     const userId = req.user.id;
@@ -104,7 +105,7 @@ router.post('/', authMiddleware, async (req, res) => {
 });
 
 // 更新通知
-router.put('/:id', authMiddleware, async (req, res) => {
+router.put('/:id', authMiddleware, roleMiddleware(ADMIN_ROLES), async (req, res) => {
   try {
     const { title, content, type, targetRole, isActive } = req.body;
     const { id } = req.params;
@@ -150,7 +151,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
 });
 
 // 删除通知
-router.delete('/:id', authMiddleware, async (req, res) => {
+router.delete('/:id', authMiddleware, roleMiddleware(ADMIN_ROLES), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -175,7 +176,7 @@ router.delete('/:id', authMiddleware, async (req, res) => {
 });
 
 // 批量操作通知
-router.post('/batch', authMiddleware, async (req, res) => {
+router.post('/batch', authMiddleware, roleMiddleware(ADMIN_ROLES), async (req, res) => {
   try {
     const { action, notificationIds } = req.body;
 
@@ -303,7 +304,7 @@ router.get('/user', async (req, res) => {
 });
 
 // 获取统计信息（管理员）
-router.get('/stats', authMiddleware, async (req, res) => {
+router.get('/stats', authMiddleware, roleMiddleware(ADMIN_ROLES), async (req, res) => {
   try {
     const [
       total,
@@ -327,7 +328,7 @@ router.get('/stats', authMiddleware, async (req, res) => {
       active,
       inactive,
       byType: byType.reduce((acc, item) => {
-        acc[item.type] = item._count;
+        acc[item.type] = item._count.type;
         return acc;
       }, {})
     });
