@@ -6,7 +6,7 @@ async function createSpecificGiftCard() {
   const cardCode = '1';
   const amount = 500;
   const totalUses = 100;
-  const expiresAt = new Date('2025-11-30T23:59:59Z'); // End of day 2025.11.30
+  const expiresAt = new Date('2027-12-31T23:59:59Z'); // End of day 2027.12.31
 
   console.log('开始创建指定礼品卡...');
 

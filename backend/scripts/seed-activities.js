@@ -1,4 +1,5 @@
 const { PrismaClient } = require('@prisma/client')
+const bcrypt = require('bcryptjs')
 
 const prisma = new PrismaClient()
 
@@ -60,6 +61,19 @@ const volunteerActivities = [
   { name: "社区建设志愿", desc: "参与社区规划，改善居住环境，促进邻里和谐。" }
 ]
 
+const competitionActivities = [
+  { name: "青少年机器人挑战赛", desc: "展示机器人设计与编程能力，角逐科技之星。" },
+  { name: "少儿编程创意大赛", desc: "发挥想象力，用代码创造趣味应用与游戏。" },
+  { name: "数学思维能力竞赛", desc: "挑战数学难题，锻炼逻辑思维，提升解题能力。" },
+  { name: "英语口语风采大赛", desc: "展示英语演讲才华，提升跨文化交流能力。" },
+  { name: "科学实验操作比赛", desc: "动手进行科学实验，展示实验技能与科学素养。" },
+  { name: "绘画书法艺术大赛", desc: "挥洒笔墨，描绘美好生活，传承中华艺术。" },
+  { name: "小小演说家比赛", desc: "讲述中国故事，传递正能量，展现语言魅力。" },
+  { name: "校园足球联赛", desc: "绿茵场上挥洒汗水，培养团队合作与拼搏精神。" },
+  { name: "青少年合唱比赛", desc: "用歌声传递情感，感受音乐魅力，培养艺术修养。" },
+  { name: "科技创新发明大赛", desc: "展示小发明小制作，激发创新灵感，解决实际问题。" }
+]
+
 // 随机生成更多变体
 function generateVariants(baseData, count) {
   const result = []
@@ -85,11 +99,11 @@ function generateVariants(baseData, count) {
 
 async function seedActivities() {
   try {
-    console.log('开始清理现有活动数据...')
+    // console.log('开始清理现有活动数据...')
 
     // 删除所有现有活动
-    const deleteCount = await prisma.activity.deleteMany({})
-    console.log(`已删除 ${deleteCount.count} 个现有活动`)
+    // const deleteCount = await prisma.activity.deleteMany({})
+    // console.log(`已删除 ${deleteCount.count} 个现有活动`)
 
     console.log('开始生成新的活动数据...')
 
@@ -100,11 +114,12 @@ async function seedActivities() {
 
     if (!admin) {
       console.log('创建管理员用户...')
+      const hashedPassword = await bcrypt.hash('1', 10)
       admin = await prisma.user.create({
         data: {
           username: 'admin',
           email: 'admin@example.com',
-          password: '123456',
+          password: hashedPassword,
           name: '系统管理员',
           role: 'SUPER_ADMIN',
           phone: '13800138000',
@@ -141,14 +156,16 @@ async function seedActivities() {
     }
 
     // 生成活动数据
-    const researchActivities20 = generateVariants(researchActivities, 20)
-    const practicalActivities20 = generateVariants(practicalActivities, 20)
-    const volunteerActivities20 = generateVariants(volunteerActivities, 20)
+    const researchActivities20 = generateVariants(researchActivities, 30)
+    const practicalActivities20 = generateVariants(practicalActivities, 30)
+    const volunteerActivities20 = generateVariants(volunteerActivities, 30)
+    const competitionActivities20 = generateVariants(competitionActivities, 30)
 
     const allActivities = [
-      ...researchActivities20.map(a => ({ ...a, type: '研学活动' })),
-      ...practicalActivities20.map(a => ({ ...a, type: '实践活动' })),
-      ...volunteerActivities20.map(a => ({ ...a, type: '公益活动' }))
+      ...researchActivities20.map(a => ({ ...a, type: '研学' })),
+      ...practicalActivities20.map(a => ({ ...a, type: '实践' })),
+      ...volunteerActivities20.map(a => ({ ...a, type: '公益' })),
+      ...competitionActivities20.map(a => ({ ...a, type: '赛事' }))
     ]
 
     console.log(`准备创建 ${allActivities.length} 个活动...`)
@@ -169,6 +186,7 @@ async function seedActivities() {
           time: time,
           location: activity.location,
           maxPeople: activity.maxPeople,
+          price: Math.floor(Math.random() * 200) + 1, // 随机价格 1-200
           baseId: base.id,
           createdBy: admin.id,
           isApproved: true,

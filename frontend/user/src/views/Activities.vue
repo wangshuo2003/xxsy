@@ -5,89 +5,37 @@
       <van-tabs v-model:active="activeTab" @change="onTabChange" sticky>
         <van-tab title="赛事" name="赛事">
           <ActivityList :activities="filteredActivities" :loading="loading" :has-more="false" :infinite="false" :data-ready="dataReady" :fallback-image="bingFallback" @refresh="refreshActivities" />
-          <div v-if="totalPages > 1" class="activities-pagination">
-            <van-button size="small" :disabled="page <= 1" @click="handleGoToFirst">首页</van-button>
-            <van-button size="small" :disabled="page <= 1" @click="handlePrevPage">上一页</van-button>
-            <span class="page-info">第 {{ page }} / {{ totalPages }} 页</span>
-            <van-button size="small" :disabled="page >= totalPages" @click="handleNextPage">下一页</van-button>
-            <van-button size="small" :disabled="page >= totalPages" @click="handleGoToLast">末页</van-button>
-            <div class="jump-section">
-              <van-field
-                v-model="jumpPageInput"
-                type="digit"
-                placeholder="页码"
-                class="jump-input"
-                maxlength="4"
-                @keyup.enter="handleJumpPage"
-              />
-              <van-button size="small" type="primary" @click="handleJumpPage">跳转</van-button>
-            </div>
-          </div>
         </van-tab>
         <van-tab title="研学" name="研学">
           <ActivityList :activities="filteredActivities" :loading="loading" :has-more="false" :infinite="false" :data-ready="dataReady" :fallback-image="bingFallback" @refresh="refreshActivities" />
-          <div v-if="totalPages > 1" class="activities-pagination">
-            <van-button size="small" :disabled="page <= 1" @click="handleGoToFirst">首页</van-button>
-            <van-button size="small" :disabled="page <= 1" @click="handlePrevPage">上一页</van-button>
-            <span class="page-info">第 {{ page }} / {{ totalPages }} 页</span>
-            <van-button size="small" :disabled="page >= totalPages" @click="handleNextPage">下一页</van-button>
-            <van-button size="small" :disabled="page >= totalPages" @click="handleGoToLast">末页</van-button>
-            <div class="jump-section">
-              <van-field
-                v-model="jumpPageInput"
-                type="digit"
-                placeholder="页码"
-                class="jump-input"
-                maxlength="4"
-                @keyup.enter="handleJumpPage"
-              />
-              <van-button size="small" type="primary" @click="handleJumpPage">跳转</van-button>
-            </div>
-          </div>
         </van-tab>
         <van-tab title="实践" name="实践">
           <ActivityList :activities="filteredActivities" :loading="loading" :has-more="false" :infinite="false" :data-ready="dataReady" :fallback-image="bingFallback" @refresh="refreshActivities" />
-          <div v-if="totalPages > 1" class="activities-pagination">
-            <van-button size="small" :disabled="page <= 1" @click="handleGoToFirst">首页</van-button>
-            <van-button size="small" :disabled="page <= 1" @click="handlePrevPage">上一页</van-button>
-            <span class="page-info">第 {{ page }} / {{ totalPages }} 页</span>
-            <van-button size="small" :disabled="page >= totalPages" @click="handleNextPage">下一页</van-button>
-            <van-button size="small" :disabled="page >= totalPages" @click="handleGoToLast">末页</van-button>
-            <div class="jump-section">
-              <van-field
-                v-model="jumpPageInput"
-                type="digit"
-                placeholder="页码"
-                class="jump-input"
-                maxlength="4"
-                @keyup.enter="handleJumpPage"
-              />
-              <van-button size="small" type="primary" @click="handleJumpPage">跳转</van-button>
-            </div>
-          </div>
         </van-tab>
         <van-tab title="公益" name="公益">
           <ActivityList :activities="filteredActivities" :loading="loading" :has-more="false" :infinite="false" :data-ready="dataReady" :fallback-image="bingFallback" @refresh="refreshActivities" />
-          <div v-if="totalPages > 1" class="activities-pagination">
-            <van-button size="small" :disabled="page <= 1" @click="handleGoToFirst">首页</van-button>
-            <van-button size="small" :disabled="page <= 1" @click="handlePrevPage">上一页</van-button>
-            <span class="page-info">第 {{ page }} / {{ totalPages }} 页</span>
-            <van-button size="small" :disabled="page >= totalPages" @click="handleNextPage">下一页</van-button>
-            <van-button size="small" :disabled="page >= totalPages" @click="handleGoToLast">末页</van-button>
-            <div class="jump-section">
-              <van-field
-                v-model="jumpPageInput"
-                type="digit"
-                placeholder="页码"
-                class="jump-input"
-                maxlength="4"
-                @keyup.enter="handleJumpPage"
-              />
-              <van-button size="small" type="primary" @click="handleJumpPage">跳转</van-button>
-            </div>
-          </div>
         </van-tab>
       </van-tabs>
+    </div>
+
+    <!-- 底部固定的分页栏 -->
+    <div v-if="totalPages > 1" class="activities-pagination">
+      <van-button size="small" :disabled="page <= 1" @click="handleGoToFirst">首页</van-button>
+      <van-button size="small" :disabled="page <= 1" @click="handlePrevPage">上一页</van-button>
+      <span class="page-info">第 {{ page }} / {{ totalPages }} 页</span>
+      <van-button size="small" :disabled="page >= totalPages" @click="handleNextPage">下一页</van-button>
+      <van-button size="small" :disabled="page >= totalPages" @click="handleGoToLast">末页</van-button>
+      <div class="jump-section">
+        <van-field
+          v-model="jumpPageInput"
+          type="digit"
+          placeholder="页码"
+          class="jump-input"
+          maxlength="4"
+          @keyup.enter="handleJumpPage"
+        />
+        <van-button size="small" type="primary" @click="handleJumpPage">跳转</van-button>
+      </div>
     </div>
 
     <div class="search-floating-btn">
@@ -140,7 +88,10 @@ const showLoadMore = computed(() => filteredActivities.value.length > 0)
 // 合并活动列表和报名状态
 const filteredActivities = computed(() => {
   return activities.value.map(activity => {
-    const userRegistration = userRegistrations.value.find(reg => reg.id === activity.id)
+    let userRegistration = undefined
+    if (userRegistrations.value && Array.isArray(userRegistrations.value)) {
+      userRegistration = userRegistrations.value.find(reg => reg.id === activity.id)
+    }
     // 如果订单已退款，仍然保留订单信息，让ActivityList组件处理显示逻辑
     // 这样可以确保ActivityList能正确显示"已退款"状态
     const hasRegistration = !!userRegistration
@@ -166,6 +117,7 @@ const fetchUserRegistrations = async () => {
   }
 
   try {
+    // 禁用缓存，确保每次进入页面都能获取最新的报名状态
     const response = await optimizedRequest('/activities/my-registrations', {
       method: 'GET',
       params: {
@@ -176,12 +128,15 @@ const fetchUserRegistrations = async () => {
         'Authorization': `Bearer ${userStore.token}`
       }
     }, {
-      cache: true,
-      cacheKey: `user-registrations-${userStore.user?.id}`,
-      cacheDuration: 5 * 60 * 1000 // 5分钟缓存
+      cache: false
     })
 
-    userRegistrations.value = response.data.data || []
+    if (response?.data?.data && Array.isArray(response.data.data)) {
+      userRegistrations.value = response.data.data
+    } else {
+      console.warn('Activities: 报名数据格式异常', response)
+      userRegistrations.value = []
+    }
   } catch (error) {
     console.error('获取报名状态失败:', error)
     userRegistrations.value = []
@@ -388,8 +343,9 @@ watch(
 .activities-page {
   min-height: 100vh;
   background-color: #f7f8fa;
-  display: flex;
+  display: flex !important;
   flex-direction: column;
+  padding-bottom: calc(50px + env(safe-area-inset-bottom)) !important;
 }
 
 .activities-content {
@@ -398,7 +354,7 @@ watch(
 .search-floating-btn {
   position: fixed;
   right: 16px;
-  bottom: calc(60px + env(safe-area-inset-bottom));
+  bottom: calc(120px + env(safe-area-inset-bottom));
   z-index: 99;
 }
 
@@ -430,13 +386,20 @@ watch(
 }
 
 .activities-pagination {
+  position: -webkit-sticky;
+  position: sticky;
+  bottom: calc(50px + env(safe-area-inset-bottom));
+  left: 0;
+  width: 100%;
+  z-index: 90;
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   align-items: center;
   gap: 12px;
-  padding: 16px;
+  padding: 10px 16px;
   background-color: #fff;
+  box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
 }
 
 .activities-pagination .page-info {

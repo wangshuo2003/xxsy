@@ -78,7 +78,10 @@ const currentFilterLabel = computed(() => {
 
 const filteredActivities = computed(() => {
   return activities.value.map(activity => {
-    const userRegistration = userRegistrations.value.find(reg => reg.id === activity.id)
+    let userRegistration = undefined
+    if (Array.isArray(userRegistrations.value)) {
+      userRegistration = userRegistrations.value.find(reg => reg.id === activity.id)
+    }
     return {
       ...activity,
       registrationStatus: userRegistration?.registrationStatus,
@@ -105,7 +108,12 @@ const fetchUserRegistrations = async () => {
         Authorization: `Bearer ${userStore.token}`
       }
     })
-    userRegistrations.value = response.data.data || []
+    
+    if (response.data && Array.isArray(response.data.data)) {
+      userRegistrations.value = response.data.data
+    } else {
+      userRegistrations.value = []
+    }
   } catch (error) {
     console.error('获取报名状态失败:', error)
     userRegistrations.value = []
