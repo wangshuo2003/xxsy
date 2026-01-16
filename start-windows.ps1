@@ -2,6 +2,9 @@ Param(
     [switch]$Rebuild
 )
 
+# Ensure UTF-8 output
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
 $platform = "Windows"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $scriptDir
@@ -9,11 +12,14 @@ $projectName = "xxsy"
 $env:COMPOSE_PROJECT_NAME = $projectName
 $userDist = Join-Path $scriptDir "frontend/user/dist"
 $adminDist = Join-Path $scriptDir "frontend/admin/dist"
+$maxRetries = 5
+$retryInterval = 5
 
 function Test-DockerEngine {
+    $ErrorActionPreference = "SilentlyContinue"
     try {
         docker info *> $null
-        return $true
+        return $LASTEXITCODE -eq 0
     } catch {
         return $false
     }
@@ -33,7 +39,7 @@ function Get-ComposeCommand {
         return @{ Executable = "docker-compose"; Prefix = @(); Display = "docker-compose" }
     }
 
-    throw "[$platform] 未检测到 Docker Compose，请先安装 Docker Desktop 或 docker-compose。"
+    throw "[$platform] Docker Compose not found. Please install Docker Desktop or docker-compose."
 }
 
 try {
@@ -43,12 +49,13 @@ try {
     exit 1
 }
 
-# 清理前端构建产物，避免旧的 dist 干扰
-Write-Host "[$platform] 清理前端构建产物..." -ForegroundColor Cyan
-Remove-Item -Recurse -Force $userDist, $adminDist -ErrorAction SilentlyContinue
+# Clean up frontend build artifacts
+Write-Host "[$platform] Cleaning up frontend build artifacts..." -ForegroundColor Cyan
+if (Test-Path $userDist) { Remove-Item -Recurse -Force $userDist -ErrorAction SilentlyContinue }
+if (Test-Path $adminDist) { Remove-Item -Recurse -Force $adminDist -ErrorAction SilentlyContinue }
 
 if (-not (Test-DockerEngine)) {
-    Write-Host "Docker 未运行，正在尝试启动 Docker Desktop..."
+    Write-Host "Docker is not running. Attempting to start Docker Desktop..."
     try {
         # Best-effort attempt to find and start Docker Desktop
         $dockerPath = (Get-Item "C:\Program Files\Docker\Docker\Docker Desktop.exe" -ErrorAction SilentlyContinue).FullName
@@ -62,7 +69,7 @@ if (-not (Test-DockerEngine)) {
         # Silently continue, the check below will determine if it worked
     }
 
-    Write-Host "正在等待 Docker 守护进程启动，请稍候... (最多等待 60 秒)"
+    Write-Host "Waiting for Docker daemon to start... (max 60s)"
     $wait = 0
     while ($wait -lt 12) { # 12 * 5s = 60s
         if (Test-DockerEngine) {
@@ -73,23 +80,36 @@ if (-not (Test-DockerEngine)) {
     }
 
     if (-not (Test-DockerEngine)) {
-        Write-Host "启动 Docker 失败。请确保 Docker Desktop 已正确安装并手动启动一次。"
+        Write-Host "Failed to start Docker. Please ensure Docker Desktop is installed and start it manually."
         exit 1
     }
-    Write-Host "Docker 已成功启动。" -ForegroundColor Green
+    Write-Host "Docker started successfully." -ForegroundColor Green
 }
 
 function Invoke-ComposeCommand {
     param(
-        [string[]]$Args
+        [Parameter(Position=0, ValueFromRemainingArguments=$true)]
+        [object[]]$DockerArguments
     )
 
-    $fullArgs = @()
-    $fullArgs += $compose.Prefix
-    $fullArgs += $Args
+    $cmdArgs = @()
+    if ($compose.Prefix) {
+        $cmdArgs += $compose.Prefix
+    }
+    
+    # Flatten nested arrays if any
+    foreach ($arg in $DockerArguments) {
+        if ($arg -is [System.Collections.IEnumerable] -and $arg -isnot [string]) {
+            $cmdArgs += $arg
+        } else {
+            $cmdArgs += $arg
+        }
+    }
 
-    & $compose.Executable @fullArgs
-    return $LASTEXITCODE
+    # Debug: Print the exact command being executed
+    # Write-Host "Running: & $($compose.Executable) $cmdArgs" -ForegroundColor DarkGray
+
+    & $compose.Executable $cmdArgs
 }
 
 $composeArgs = @("up", "-d")
@@ -97,47 +117,43 @@ if ($Rebuild.IsPresent) {
     $composeArgs += "--build"
 }
 
-Write-Host "[$platform] 使用 Docker Compose 启动教育实践平台..." -ForegroundColor Cyan
-$startExit = Invoke-ComposeCommand $composeArgs
-if ($startExit -ne 0) {
-    Write-Error "[$platform] 启动失败，请检查上面的错误信息。"
-    exit $startExit
+Write-Host "[$platform] Starting Education Platform using $($compose.Display)..." -ForegroundColor Cyan
+Invoke-ComposeCommand $composeArgs
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Startup failed. Please check Docker Compose configuration."
+    exit $LASTEXITCODE
 }
 
-function Ensure-BackendReady {
-    param(
-        [int]$MaxRetries = 5,
-        [int]$DelaySeconds = 5
-    )
-
-    for ($attempt = 1; $attempt -le $MaxRetries; $attempt++) {
-        Write-Host "[$platform] 确保 backend 容器就绪（尝试 $attempt/$MaxRetries）..." -ForegroundColor Cyan
-
-        if ((Invoke-ComposeCommand @("up", "-d", "backend")) -eq 0) {
-            Write-Host "[$platform] backend 已成功启动。" -ForegroundColor Green
-            return $true
-        }
-
-        if ($attempt -eq $MaxRetries) {
-            Write-Error "[$platform] backend 连续 $MaxRetries 次启动失败，请检查数据库或后端日志。"
-            return $false
-        }
-
-        Write-Host "[$platform] backend 启动失败，$DelaySeconds 秒后重试..." -ForegroundColor Yellow
-        Start-Sleep -Seconds $DelaySeconds
+$attempt = 1
+while ($attempt -le $maxRetries) {
+    Write-Host "[$platform] Ensuring backend container is ready (Attempt $attempt/$maxRetries)..." -ForegroundColor Cyan
+    
+    # Check backend container status
+    Invoke-ComposeCommand "up", "-d", "backend"
+    
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "[$platform] Backend started successfully." -ForegroundColor Green
+        break
     }
+    
+    if ($attempt -eq $maxRetries) {
+        Write-Error "[$platform] Backend failed to start after $maxRetries attempts. Please check database or backend logs."
+        exit 1
+    }
+
+    Write-Host "[$platform] Backend check failed. Retrying in ${retryInterval}s..." -ForegroundColor Yellow
+    Start-Sleep -Seconds $retryInterval
+    $attempt++
 }
 
-if (-not (Ensure-BackendReady)) {
-    exit 1
-}
+Write-Host @"
 
-Write-Host ""
-Write-Host "服务已启动：" -ForegroundColor Green
-Write-Host "- MySQL:      3306 (容器内部访问)" -ForegroundColor Gray
-Write-Host "- 后端 API:   http://localhost:28964" -ForegroundColor Gray
-Write-Host "- 管理端：    http://localhost:18964" -ForegroundColor Gray
-Write-Host "- 用户端：    http://localhost:8964" -ForegroundColor Gray
-Write-Host ""
-Write-Host "查看日志： $($compose.Display) logs -f backend" -ForegroundColor Yellow
-Write-Host "停止服务： $($compose.Display) down" -ForegroundColor Yellow
+Services started:
+- MySQL:        3306 (internal access)
+- Backend API:  http://localhost:28964
+- Admin Portal: http://localhost:18964
+- User Portal:  http://localhost:8964
+
+Use '$($compose.Display) logs -f backend' to view backend logs.
+Use '$($compose.Display) down' to stop all services.
+"@ -ForegroundColor Green

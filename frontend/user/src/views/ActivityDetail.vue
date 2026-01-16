@@ -6,13 +6,12 @@
 
     <div v-else-if="activity" class="content-wrapper">
       <!-- 滚动内容区域 -->
-      <div class="scrollable-content">
+      <div class="scrollable-content" ref="scrollContainerRef">
         <!-- 活动图片 -->
         <div class="activity-image">
           <img :src="activity.coverImage || bingFallback" :alt="activity.name" />
         </div>
 
-        <!-- 活动信息 -->
         <div class="activity-info">
           <h1>{{ activity.name }}</h1>
 
@@ -50,11 +49,27 @@
             </div>
           </div>
 
-          <!-- 活动描述 -->
           <div class="description" v-if="activity.description">
             <h3>活动介绍</h3>
             <div class="description-content" v-html="activity.description"></div>
           </div>
+
+          <div
+            v-if="order && ['REFUNDING', 'REFUNDED'].includes(order.status)"
+            ref="refundInfoRef"
+            class="refund-info"
+          >
+            <h3 class="refund-info-title">退款状态</h3>
+            <p v-if="order.status === 'REFUNDING'" class="refund-info-text">
+              退款申请已提交，正在审核中。
+            </p>
+            <p v-else class="refund-info-text refunded">
+              已退款，金额将退回至账户余额。
+            </p>
+          </div>
+          
+          <!-- 用于滚动定位的锚点，高度设置为底部栏高度 + 缓冲，防止被遮挡 -->
+          <div id="refund-anchor" style="height: 60px; width: 100%; pointer-events: none;"></div>
         </div>
       </div>
 
@@ -179,6 +194,7 @@
     cancel-button-text="取消"
     :confirm-button-loading="refunding"
     :close-on-click-overlay="false"
+    :lock-scroll="false"
     @confirm="submitRefundRequest"
     @cancel="handleCloseRefundDialog"
   >
@@ -198,13 +214,13 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch, computed } from 'vue'
+import { ref, onMounted, watch, computed, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { showToast, showSuccessToast, showConfirmDialog } from 'vant'
-import axios from 'axios'
 import request from '@/api/request'
 import { getBingFallback } from '@/utils/bingFallback'
+import { clearCache } from '@/utils/apiOptimizer'
 
 const route = useRoute()
 const router = useRouter()
@@ -214,15 +230,17 @@ const bingFallback = getBingFallback()
 const activity = ref(null)
 const loading = ref(true)
 const registering = ref(false)
-const canceling = ref(false) // 取消报名loading状态
-const refunding = ref(false) // 退款loading状态
-const cancelingRefund = ref(false) // 取消退款loading状态
-const order = ref(null) // 从URL获取的特定订单
-const userOrders = ref([]) // 用户的订单列表，用于查找特定订单
-const isFavorited = ref(false) // 是否已收藏
-const favoriteId = ref(null) // 收藏的ID
+const canceling = ref(false)
+const refunding = ref(false)
+const cancelingRefund = ref(false)
+const order = ref(null)
+const userOrders = ref([])
+const isFavorited = ref(false)
+const favoriteId = ref(null)
 const showRefundDialog = ref(false)
 const refundReason = ref('')
+const refundInfoRef = ref(null)
+const scrollContainerRef = ref(null)
 
 const loadUserOrdersForActivity = async () => {
   if (!userStore.isLoggedIn || !activity.value) return null
@@ -230,29 +248,41 @@ const loadUserOrdersForActivity = async () => {
     const ordersResponse = await request.get('/orders', {
       params: { page: 1, limit: 500, activityId: activity.value.id }
     })
-    userOrders.value = ordersResponse.data || []
+    
+    // 修正：后端返回的是 { data: [], pagination: {} }
+    if (ordersResponse.data && Array.isArray(ordersResponse.data.data)) {
+      userOrders.value = ordersResponse.data.data
+    } else if (Array.isArray(ordersResponse.data)) {
+      userOrders.value = ordersResponse.data
+    } else {
+      userOrders.value = []
+    }
 
     // 已有订单号时直接匹配
     if (route.params.orderId) {
-      order.value = userOrders.value.find(o => o.orderNo === route.params.orderId) || null
+      if (Array.isArray(userOrders.value)) {
+        order.value = userOrders.value.find(o => o.orderNo === route.params.orderId) || null
+      }
       return order.value
     }
 
     // 未带订单号，自动匹配最近的待支付或已支付订单
-    const targetOrder = userOrders.value
-      .filter(o => o.activityId === activity.value.id && ['PENDING', 'PAID', 'REFUNDING'].includes(o.status))
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0]
+    if (Array.isArray(userOrders.value)) {
+      const targetOrder = userOrders.value
+        .filter(o => o.activityId === activity.value.id && ['PENDING', 'PAID', 'REFUNDING'].includes(o.status))
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0]
 
-    if (targetOrder) {
-      order.value = targetOrder
-      try {
-        await router.replace(`/activity/${activity.value.id}/${targetOrder.orderNo}`)
-      } catch (err) {
-        console.error('更新订单上下文失败:', err)
+      if (targetOrder) {
+        order.value = targetOrder
+        try {
+          await router.replace(`/activity/${activity.value.id}/${targetOrder.orderNo}`)
+        } catch (err) {
+          console.error('更新订单上下文失败:', err)
+        }
       }
+      return targetOrder
     }
-
-    return targetOrder
+    return null
   } catch (error) {
     console.error('获取用户订单列表失败:', error)
     return null
@@ -274,46 +304,14 @@ const findLatestPendingOrder = async () => {
   return loadUserOrdersForActivity()
 }
 
-const redirectToPayment = async (targetOrder, toastMessage = null) => {
-  if (!targetOrder) return false
-
-  order.value = targetOrder
-  userOrders.value = [targetOrder, ...userOrders.value.filter(o => o.id !== targetOrder.id)]
-
-  if (targetOrder.orderNo) {
-    try {
-      await router.replace(`/activity/${activity.value.id}/${targetOrder.orderNo}`)
-    } catch (err) {
-      console.error('更新订单上下文失败:', err)
-    }
+const fetchPageData = async (showLoading = true) => {
+  if (showLoading) {
+    loading.value = true
   }
-
-  if (toastMessage) {
-    showSuccessToast(toastMessage)
-  }
-
-  router.push({
-    path: '/payment',
-    query: {
-      type: 'activity',
-      id: activity.value.id,
-      name: activity.value.name,
-      price: activity.value.price || 0,
-      image: activity.value.coverImage || bingFallback,
-      orderId: targetOrder.id,
-      orderNo: targetOrder.orderNo
-    }
-  })
-
-  return true
-}
-
-const fetchPageData = async () => {
-  loading.value = true
   try {
     // 1. 获取活动详情
-    const activityResponse = await axios.get(`/api/activities/${route.params.id}`)
-    activity.value = activityResponse.data.data
+    const activityResponse = await request.get(`/activities/${route.params.id}`)
+    activity.value = activityResponse.data
 
     // 2. 如果用户已登录，处理特定于用户的数据
     if (userStore.isLoggedIn) {
@@ -325,7 +323,9 @@ const fetchPageData = async () => {
     activity.value = null // 清空活动数据
     showToast('获取活动详情失败')
   } finally {
-    loading.value = false
+    if (showLoading) {
+      loading.value = false
+    }
   }
 }
 
@@ -418,47 +418,58 @@ const isFull = (activity) => {
 
 // 处理报名/支付
 const handleRegister = async () => {
-  // 检查用户是否登录
-  if (!userStore.isLoggedIn) {
-    showToast('请先登录')
-    router.push('/login')
-    return
-  }
-
-  // 正常报名流程
+  console.log('handleRegister: 开始处理报名')
+  
   try {
+    // 检查用户是否登录
+    if (!userStore.isLoggedIn) {
+      showToast('请先登录')
+      router.push('/login')
+      return
+    }
+
     registering.value = true
+    const toast = showToast({ message: '正在处理报名...', forbidClick: true, duration: 0 })
 
     // 后端报名接口会创建订单
-    const registerResponse = await axios.post(
-      `/api/activities/${activity.value.id}/register`,
-      {},
-      {
-        headers: {
-          'Authorization': `Bearer ${userStore.token}`
-        }
-      }
-    )
-
-    const createdOrder = registerResponse.data?.data?.order
+    console.log('handleRegister: 发起API请求')
+    const registerResponse = await request.post(`/activities/${activity.value.id}/register`)
+    console.log('handleRegister: API响应', registerResponse)
+    
+    // 清除缓存，确保其他页面（如列表页）状态最新
+    if (userStore.user?.id) {
+      clearCache(`user-orders-${userStore.user.id}`)
+      clearCache(`user-registrations-${userStore.user.id}`)
+    }
+    
+    // 兼容可能的数据结构
+    const responseData = registerResponse.data || registerResponse
+    const createdOrder = responseData.order || responseData.data?.order
     const price = activity.value.price || 0
 
     if (price > 0) {
       let targetOrder = createdOrder
       if (!targetOrder) {
+        console.log('handleRegister: 未在响应中找到订单，尝试查找最新待支付订单')
         targetOrder = await findLatestPendingOrder()
       }
 
-      if (await redirectToPayment(targetOrder, '报名成功，前往支付')) {
+      if (targetOrder) {
+        console.log('handleRegister: 找到订单，准备跳转支付', targetOrder)
+        toast.close() // 关闭处理中的提示
+        await redirectToPayment(targetOrder, '报名成功，正在跳转支付...')
         return
       }
 
+      console.warn('handleRegister: 报名成功但未找到订单信息')
+      toast.close()
       showToast('报名成功，但暂未找到订单，请稍后在“我的订单”查看')
       router.push('/orders')
       return
     }
 
     // 免费活动
+    toast.close()
     showSuccessToast('报名成功')
     await fetchPageData()
 
@@ -468,6 +479,52 @@ const handleRegister = async () => {
   } finally {
     registering.value = false
   }
+}
+
+const redirectToPayment = async (targetOrder, toastMessage = null) => {
+  if (!targetOrder) {
+    console.error('redirectToPayment: 缺少订单信息')
+    return false
+  }
+
+  // 更新本地状态
+  order.value = targetOrder
+  userOrders.value = [targetOrder, ...userOrders.value.filter(o => o.id !== targetOrder.id)]
+
+  if (toastMessage) {
+    showToast({ message: toastMessage, type: 'success', duration: 1500 })
+  }
+
+  // 构造参数
+  const query = {
+    type: 'activity',
+    id: activity.value.id,
+    name: activity.value.name,
+    price: activity.value.price || 0,
+    image: activity.value.coverImage || bingFallback,
+    orderId: targetOrder.id,
+    orderNo: targetOrder.orderNo
+  }
+  
+  console.log('redirectToPayment: 构造支付参数', query)
+
+  // 强制构建完整 URL 并使用 window.location.href 跳转
+  // 这种方式最稳妥，避开 Vue Router 在某些环境下的潜在问题
+  try {
+    const { href } = router.resolve({ path: '/payment', query })
+    console.log('redirectToPayment: 目标URL', href)
+    
+    // 延迟一小会儿确保 Toast 能被看到
+    setTimeout(() => {
+      window.location.href = href
+    }, 500)
+    
+  } catch (e) {
+    console.error('redirectToPayment: URL解析失败', e)
+    // 最后的兜底
+    router.push({ path: '/payment', query })
+  }
+  return true
 }
 
 const handlePay = () => {
@@ -487,8 +544,45 @@ const canApplyForRefund = computed(() => {
   return timeDiff > 24 * 60 * 60 * 1000
 })
 
+const scrollToRefundInfo = () => {
+  // 确保在可能的 DOM 更新和 Dialog 动画之后执行
+  setTimeout(() => {
+    // 1. 尝试找到 Layout.vue 中的滚动容器
+    const scrollContainer = document.querySelector('.user-content') || document.documentElement || document.body
+    
+    // 2. 找到锚点
+    const anchor = document.getElementById('refund-anchor')
+    
+    console.log('Scroll Debug:', {
+      container: scrollContainer,
+      anchor: anchor,
+      scrollHeight: scrollContainer?.scrollHeight,
+      clientHeight: scrollContainer?.clientHeight,
+      scrollTop: scrollContainer?.scrollTop
+    })
+
+    if (anchor) {
+      // 优先使用 scrollIntoView
+      anchor.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    }
+    
+    // 3. 作为双重保障，如果容器可滚动，强制滚到底部
+    if (scrollContainer && scrollContainer.scrollHeight > scrollContainer.clientHeight) {
+      // 给一点缓冲时间让 scrollIntoView 先生效，如果没生效或不够到底，这里会补刀
+      setTimeout(() => {
+        scrollContainer.scrollTo({
+          top: scrollContainer.scrollHeight,
+          behavior: 'smooth'
+        })
+      }, 100)
+    }
+  }, 300)
+}
+
 const handleRefund = () => {
   refundReason.value = ''
+  // 先尝试滚动，让用户看到底部区域（如果页面长的话）
+  scrollToRefundInfo()
   showRefundDialog.value = true
 }
 
@@ -511,7 +605,13 @@ const submitRefundRequest = async () => {
     })
     showSuccessToast('退款申请已提交')
     showRefundDialog.value = false
-    await fetchPageData() // 刷新页面数据
+    
+    // 刷新数据，但不显示全屏 loading，以免破坏滚动位置
+    await fetchPageData(false)
+    
+    // 关键：提交成功后，状态已变为 REFUNDING，退款信息显示，此时必须滚动到底部
+    scrollToRefundInfo()
+    
   } catch (error) {
     console.error('退款失败:', error)
     showToast(error.response?.data?.error || '退款失败，请稍后重试')
@@ -574,21 +674,19 @@ watch(() => route.params.orderId, (newOrderId, oldOrderId) => {
 
 <style scoped>
 .activity-detail {
-  position: fixed;
-  inset: 0;
-  overflow: hidden;
+  min-height: 100vh;
   background-color: #f7f8fa;
   display: flex;
   flex-direction: column;
+  /* 适当的 padding 防止内容被底部固定栏遮挡，也不要太大 */
+  padding-bottom: calc(100px + env(safe-area-inset-bottom));
 }
 
 .content-wrapper {
   flex: 1;
   display: flex;
   flex-direction: column;
-  min-height: 0;
   position: relative;
-  overflow: hidden;
 }
 
 .loading {
@@ -600,11 +698,11 @@ watch(() => route.params.orderId, (newOrderId, oldOrderId) => {
 
 .scrollable-content {
   flex: 1;
-  height: 100%;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
   background-color: white;
-  padding-bottom: calc(140px + env(safe-area-inset-bottom));
+  /* padding-bottom moved to activity-detail or kept here? 
+     If we keep it here, it works too. Let's remove the bottom padding from here and put it on the container or keep it.
+     Let's keep it here but remove height/overflow.
+  */
 }
 
 .activity-image {
@@ -678,6 +776,30 @@ watch(() => route.params.orderId, (newOrderId, oldOrderId) => {
   border-radius: 4px;
 }
 
+.refund-info {
+  margin-top: 12px;
+  padding: 12px 12px 16px 12px;
+  border-top: 1px solid #f0f0f0;
+  background-color: #fff7f7;
+}
+
+.refund-info-title {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #d93025;
+}
+
+.refund-info-text {
+  margin: 0;
+  font-size: 14px;
+  color: #666;
+}
+
+.refund-info-text.refunded {
+  color: #07c160;
+}
+
 .price-item {
   color: #ff6034;
   font-weight: 600;
@@ -702,14 +824,6 @@ watch(() => route.params.orderId, (newOrderId, oldOrderId) => {
   align-items: stretch;
   gap: 12px;
   flex-shrink: 0;
-}
-
-:deep(.van-overlay) {
-  z-index: 20 !important;
-}
-
-:deep(.van-dialog) {
-  z-index: 21 !important;
 }
 
 .main-actions {

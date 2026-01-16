@@ -8,14 +8,15 @@ const router = express.Router()
 // 获取活动列表
 router.get('/', async (req, res) => {
   try {
-    const { isApproved, baseId, search, type } = req.query;
+    const { isApproved, isActive, baseId, search, type } = req.query;
     const page = parseInt(req.query.page || '1', 10);
     const limit = parseInt(req.query.limit || '10', 10);
 
     const where = {};
-    if (isApproved !== undefined) where.isApproved = isApproved === 'true';
+    if (isApproved !== undefined) where.isApproved = (isApproved === 'true' || isApproved === '1');
+    if (isActive !== undefined) where.isActive = (isActive === 'true' || isActive === '1');
     if (baseId) where.baseId = parseInt(baseId);
-    if (type) where.type = type;
+    if (type) where.type = { contains: type };
     if (search) {
       where.OR = [
         { name: { contains: search } },

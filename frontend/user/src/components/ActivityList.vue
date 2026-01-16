@@ -134,7 +134,7 @@ import axios from 'axios'
 import { showSuccessToast, showDialog, showFailToast, showToast } from 'vant'
 import request from '@/api/request'
 import { getBingFallback } from '@/utils/bingFallback'
-import { optimizedRequest } from '@/utils/apiOptimizer'
+import { optimizedRequest, clearCache } from '@/utils/apiOptimizer'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -187,8 +187,24 @@ const getActivityThumb = (activity) => {
 }
 
 const findOrderForActivity = (activityId) => {
-  return userOrders.value.find(order => order.activityId === activityId)
-}
+    // 防御性编程：检查 userOrders.value 是否为数组
+    if (!userOrders.value || !Array.isArray(userOrders.value)) {
+      // 仅在非空且非数组时报错，避免初始化时的误报
+      if (userOrders.value && Object.keys(userOrders.value).length > 0) {
+        console.error('ActivityList: userOrders 异常', typeof userOrders.value, userOrders.value)
+      }
+      return undefined
+    }
+    
+    // 使用 for 循环代替 .find，避免潜在的原型链问题
+    for (let i = 0; i < userOrders.value.length; i++) {
+      const order = userOrders.value[i]
+      if (order && order.activityId === activityId) {
+        return order
+      }
+    }
+    return undefined
+  }
 
 const getActivityOrder = (activity) => {
   // 优先使用列表数据自带的订单（从 my-registrations 返回），否则再查用户订单列表
@@ -204,20 +220,45 @@ const fetchUserOrders = async () => {
     return
   }
 
+  // 确保有用户ID
+  if (!userStore.user?.id) {
+    console.warn('ActivityList: 已登录但无用户ID，尝试获取用户信息')
+    try {
+      await userStore.getUserInfo()
+    } catch (e) {
+      console.error('ActivityList: 获取用户信息失败', e)
+      // 如果获取失败，不中断，但后续可能拿不到订单
+    }
+  }
+
+  if (!userStore.user?.id) {
+     console.error('ActivityList: 仍无用户ID，跳过获取订单')
+     return
+  }
+
   try {
     // 使用优化请求，添加缓存和去重
     const response = await optimizedRequest('/orders', {
       method: 'GET',
       params: { page: 1, limit: 50 } // 减少数量，避免大数据量请求
     }, {
-      cache: true,
-      cacheKey: `user-orders-${userStore.user?.id}`,
+      cache: false,
+      cacheKey: `user-orders-${userStore.user.id}`,
       cacheDuration: 5 * 60 * 1000, // 5分钟缓存
       deduplication: true
     })
-    userOrders.value = response.data || []
+
+    // 严格校验数据格式
+    if (response?.data?.data && Array.isArray(response.data.data)) {
+       userOrders.value = response.data.data
+    } else if (Array.isArray(response?.data)) {
+       userOrders.value = response.data
+    } else {
+       console.warn('ActivityList: 订单数据格式异常', response)
+       userOrders.value = []
+    }
   } catch (error) {
-    console.error('获取用户订单失败:', error)
+    console.error('ActivityList: 获取订单失败', error)
     userOrders.value = []
   }
 }
@@ -225,9 +266,22 @@ const fetchUserOrders = async () => {
 const getLatestPendingOrder = async (activityId) => {
   if (!userStore.isLoggedIn) return null
   await fetchUserOrders()
-  return userOrders.value
-    .filter(order => order.activityId === activityId && order.status === 'PENDING')
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0]
+  
+  if (!userOrders.value || !Array.isArray(userOrders.value)) {
+    return null
+  }
+  
+  // 安全的过滤和排序
+  const pendingOrders = []
+  for (const order of userOrders.value) {
+    if (order && order.activityId === activityId && order.status === 'PENDING') {
+      pendingOrders.push(order)
+    }
+  }
+  
+  if (pendingOrders.length === 0) return null
+  
+  return pendingOrders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0]
 }
 
 // 当活动列表改变时，加载收藏状态和订单状态
@@ -530,6 +584,9 @@ const goToDetail = (activityId) => {
 
 // 处理报名/支付
 const handleRegister = async (activity) => {
+  // alert('调试: 开始处理报名 ' + activity.name)
+  console.log('ActivityList: 开始处理报名', activity.id, activity.name)
+  
   // 检查用户是否登录
   if (!userStore.isLoggedIn) {
     showDialog({
@@ -541,69 +598,89 @@ const handleRegister = async (activity) => {
     return
   }
 
+  // 再次确保用户信息完整
+  if (!userStore.user?.id) {
+    try {
+      await userStore.getUserInfo()
+    } catch (e) {
+      showToast('错误: 无法获取用户信息，请重新登录')
+      return
+    }
+  }
+
   // 如果已报名但未支付，跳转到支付页面
   if (isRegisteredUnpaid(activity)) {
+    console.log('ActivityList: 已报名未支付，直接跳转支付')
     const price = activity.price || 0
-    router.push({
-      path: '/payment',
-      query: {
-        type: 'activity',
-        id: activity.id,
-        name: activity.name,
-        price: price,
-        image: activity.coverImage || getBingFallback(),
-        orderId: activity.order.id // 修复：传递现有订单的ID
-      }
-    })
+    const query = {
+      type: 'activity',
+      id: activity.id,
+      name: activity.name,
+      price: price,
+      image: activity.coverImage || getBingFallback(),
+      orderId: activity.order?.id,
+      orderNo: activity.order?.orderNo
+    }
+    
+    navigateToPayment(query)
     return
   }
 
   try {
     registering.value[activity.id] = true
+    const toast = showToast({ message: '正在处理...', forbidClick: true, duration: 0 })
 
-    const response = await axios.post(
-      `/api/activities/${activity.id}/register`,
-      {},
-      {
-        headers: {
-          'Authorization': `Bearer ${userStore.token}`
-        }
-      }
-    )
+    console.log('ActivityList: 发起报名请求')
+    // 使用 request 实例而不是原生 axios
+    const response = await request.post(`/activities/${activity.id}/register`)
+    console.log('ActivityList: 报名响应', response)
 
-    let targetOrder = response.data?.data?.order
+    // 关键修复：清除缓存，确保返回列表页时状态最新
+    if (userStore.user?.id) {
+      clearCache(`user-orders-${userStore.user.id}`)
+      clearCache(`user-registrations-${userStore.user.id}`)
+    }
+
+    let targetOrder = response.data?.order || response.order
     const price = activity.price || 0
 
     if (price > 0) {
       if (!targetOrder) {
+        console.log('ActivityList: 未返回订单，尝试查找')
         targetOrder = await getLatestPendingOrder(activity.id)
       }
 
       if (targetOrder) {
+        console.log('ActivityList: 找到订单，跳转支付', targetOrder)
+        toast.close()
         showSuccessToast({
           message: '报名成功，前往支付',
           duration: 1500
         })
-        router.push({
-          path: '/payment',
-          query: {
-            type: 'activity',
-            id: activity.id,
-            name: activity.name,
-            price: price,
-            image: activity.coverImage || getBingFallback(),
-            orderId: targetOrder.id,
-            orderNo: targetOrder.orderNo
-          }
-        })
+        
+        const query = {
+          type: 'activity',
+          id: activity.id,
+          name: activity.name,
+          price: price,
+          image: activity.coverImage || getBingFallback(),
+          orderId: targetOrder.id,
+          orderNo: targetOrder.orderNo
+        }
+        
+        navigateToPayment(query)
       } else {
+        console.warn('ActivityList: 报名成功但无订单')
+        toast.close()
         showToast('报名成功，但暂未找到订单，请稍后在“我的订单”查看')
         router.push('/orders')
       }
       return
     }
 
-    const successMessage = response.data?.message || '报名成功'
+    // 免费活动
+    toast.close()
+    const successMessage = response.message || '报名成功'
     showSuccessToast({
       message: successMessage,
       duration: 2000
@@ -612,7 +689,7 @@ const handleRegister = async (activity) => {
     // 刷新活动列表以更新报名人数和状态
     emit('refresh')
   } catch (error) {
-    console.error('报名失败:', error)
+    console.error('ActivityList: 报名失败', error)
     const errorMessage = error.response?.data?.error
       || error.response?.data?.message
       || error.message
@@ -620,6 +697,48 @@ const handleRegister = async (activity) => {
     showFailToast(errorMessage)
   } finally {
     registering.value[activity.id] = false
+  }
+}
+
+// 统一跳转支付页逻辑
+const navigateToPayment = (query) => {
+  console.log('ActivityList: 准备跳转支付页', query)
+  
+  // 手动构建 URL，不依赖 router.resolve，以排除路由配置错误
+  try {
+    const params = new URLSearchParams()
+    for (const key in query) {
+      if (query[key] !== undefined && query[key] !== null) {
+        params.append(key, query[key])
+      }
+    }
+    
+    // 假设是 hash 模式还是 history 模式？
+    // 先检查当前的 URL 结构
+    const currentHref = window.location.href
+    const isHashMode = currentHref.includes('/#/')
+    
+    let fullUrl = ''
+    
+    if (isHashMode) {
+      const baseUrl = currentHref.split('/#/')[0]
+      fullUrl = `${baseUrl}/#/payment?${params.toString()}`
+    } else {
+      const origin = window.location.origin
+      fullUrl = `${origin}/payment?${params.toString()}`
+    }
+    
+    console.log('ActivityList: 手动构建的URL', fullUrl)
+    
+    // 强制跳转
+    setTimeout(() => {
+      window.location.href = fullUrl
+    }, 100)
+    
+  } catch (e) {
+    console.error('ActivityList: URL构建失败', e)
+    // 兜底
+    router.push({ path: '/payment', query })
   }
 }
 
