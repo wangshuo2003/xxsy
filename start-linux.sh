@@ -50,8 +50,20 @@ compose_run() {
   (cd "$ROOT_DIR" && COMPOSE_PROJECT_NAME="$PROJECT_NAME" "${compose_cmd[@]}" "$@")
 }
 
+ensure_mysql_image() {
+  if docker image inspect mysql:8.4 >/dev/null 2>&1; then
+    echo "[$PLATFORM_NAME] 已检测到本地 MySQL 镜像 mysql:8.4，优先使用本地镜像。"
+    return
+  fi
+
+  echo "[$PLATFORM_NAME] 本地未找到 MySQL 镜像 mysql:8.4，开始拉取最新镜像..."
+  docker pull mysql:8.4
+}
+
 echo "[$PLATFORM_NAME] 清理前端构建产物..."
 rm -rf "$ROOT_DIR/frontend/user/dist" "$ROOT_DIR/frontend/admin/dist" || true
+
+ensure_mysql_image
 
 compose_args=(up -d)
 if [[ "${1:-}" == "--rebuild" ]]; then

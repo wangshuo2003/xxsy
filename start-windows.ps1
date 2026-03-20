@@ -112,6 +112,22 @@ function Invoke-ComposeCommand {
     & $compose.Executable $cmdArgs
 }
 
+function Ensure-MySqlImage {
+    docker image inspect mysql:8.4 *> $null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "[$platform] 已检测到本地 MySQL 镜像 mysql:8.4，优先使用本地镜像。" -ForegroundColor Green
+        return
+    }
+
+    Write-Host "[$platform] 本地未找到 MySQL 镜像 mysql:8.4，开始拉取最新镜像..." -ForegroundColor Cyan
+    docker pull mysql:8.4
+    if ($LASTEXITCODE -ne 0) {
+        throw "[$platform] 拉取 MySQL 镜像失败，请检查 Docker 网络或镜像源配置。"
+    }
+}
+
+Ensure-MySqlImage
+
 $composeArgs = @("up", "-d")
 if ($Rebuild.IsPresent) {
     $composeArgs += "--build"
